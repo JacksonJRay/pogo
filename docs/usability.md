@@ -16,9 +16,12 @@ Use `pogo edit` to update values and `pogo rekey` to change the passphrase.
 
 - At a terminal, use the interactive prompt. The child retains access to stdin.
 - For unattended startup, pipe from a configured password manager with
-  `--key-stdin`. This consumes stdin and trims whitespace from its ends.
-- `--key-env NAME` reads a process environment variable and removes it from the
-  child. Environment readers can see it while Pogo runs.
+  `--key-stdin`. A pipe consumes stdin and trims whitespace from its ends.
+  If stdin is a terminal, `--key-stdin` prompts on stderr, turns echo off, and
+  reads one line.
+- `--key-env NAME` is a last resort. It reads a process environment variable
+  and removes it from the child, but the value stays visible to environment
+  readers (`/proc`, `docker inspect`) while Pogo runs. Prefer `--key-stdin`.
 
 Use an absolute `-f` path in services. `--env NAME` selects an environment section;
 `--no-override` preserves variables already set in the process environment.

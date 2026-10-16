@@ -264,6 +264,37 @@ if [[ $? -eq 0 ]]; then pass "key-env"; else fail "key-env"; fi
 printf '%s\n' "$PASS" | "$POGO" run -f "$WORK/app.enc" --key-stdin -- python3 -c 'import os,sys; data=sys.stdin.read(); sys.exit(0 if data=="" and os.environ.get("EQUALS_VALUE")=="a=b=c" else 1)'
 if [[ $? -eq 0 ]]; then pass "key-stdin"; else fail "key-stdin"; fi
 
+# --key-stdin on a terminal: prompt, echo off, one line. A hang here means it is still waiting for Ctrl-D.
+set +e
+timeout 20 python3 "$PTY" "$PASS" -- "$POGO" run -f "$WORK/app.enc" --key-stdin -- python3 -c 'import os,sys; sys.exit(0 if os.environ.get("EQUALS_VALUE")=="a=b=c" else 1)' >"$WORK/pty-stdin.out" 2>"$WORK/pty-stdin.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && grep -q "Enter passphrase (min 15 characters):" "$WORK/pty-stdin.out" && ! grep -q "$PASS" "$WORK/pty-stdin.out"; then
+  pass "key-stdin-tty"
+else
+  fail "key-stdin-tty exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-stdin.out" | head -c 300) $(tr '\n' ' ' <"$WORK/pty-stdin.err" | head -c 200)"
+fi
+
+set +e
+timeout 20 python3 "$PTY" "short" -- "$POGO" run -f "$WORK/app.enc" --key-stdin -- true >"$WORK/pty-short.out" 2>"$WORK/pty-short.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 4 ]] && grep -q "too short" "$WORK/pty-short.out"; then
+  pass "key-stdin-tty-short"
+else
+  fail "key-stdin-tty-short exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-short.out" | head -c 300)"
+fi
+
+set +e
+timeout 120 python3 "$PTY" "not-the-right-passphrase" -- "$POGO" run -f "$WORK/app.enc" --key-stdin -- true >"$WORK/pty-bad.out" 2>"$WORK/pty-bad.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 2 ]] && grep -q "Decryption failed" "$WORK/pty-bad.out"; then
+  pass "key-stdin-tty-decrypt-fail"
+else
+  fail "key-stdin-tty-decrypt-fail exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-bad.out" | head -c 300)"
+fi
+
 python3 "$PTY" "$PASS" -- "$POGO" run -f "$WORK/app.enc" -- python3 -c 'import os,sys; sys.exit(0 if os.environ.get("SPACED_VALUE")=="hello world" else 1)' >"$WORK/pty.out" 2>"$WORK/pty.err"
 if [[ $? -eq 0 ]]; then pass "interactive-run"; else fail "interactive-run $(tr '\n' ' ' <"$WORK/pty.err" | head -c 200) $(tr '\n' ' ' <"$WORK/pty.out" | head -c 200)"; fi
 

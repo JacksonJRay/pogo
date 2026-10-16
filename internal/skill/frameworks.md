@@ -233,6 +233,8 @@ CMD ["node","server.js"]
 read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE ; unset POGO_PASS
 ```
 
+If that entrypoint is started with a terminal (`docker run -it`), Pogo prints the passphrase prompt to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. A pipe (`docker run -i`, `docker compose run -T`) still reads all of stdin and trims the ends. The program then sees end-of-file.
+
 ### 3. `--key-stdin` from a password manager
 
 When to use: `op` or `pass` can print the passphrase. Security: do not write that output to a file. Same entrypoint as step 2. Stdin is consumed. `docker inspect` does not show it.
@@ -244,7 +246,7 @@ pass show pogo | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 
 ### 4. `--key-env`
 
-When to use: `POGO_KEY` is already in the caller's environment. Security: `docker inspect` shows it, and so does `/proc`. Pogo removes `POGO_KEY` from the program it execs. Do not write the value in the command.
+Last resort. Prefer `--key-stdin`. When to use: `POGO_KEY` is already in the caller's environment. Security: the passphrase stays in the process environment, so `docker inspect` shows it, and so does `/proc`. Pogo removes `POGO_KEY` from the program it execs. Do not write the value in the command.
 
 ```dockerfile
 ENTRYPOINT ["pogo","run","-f","/app/.env.enc","--key-env","POGO_KEY","--"]

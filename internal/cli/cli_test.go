@@ -54,6 +54,23 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	return code, out.String(), errOut.String()
 }
 
+func runCLIStdin(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	old := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = old }()
+	go func() {
+		_, _ = io.WriteString(w, stdin)
+		w.Close()
+	}()
+	return runCLI(t, args...)
+}
+
 func TestHelpFormsMatch(t *testing.T) {
 	for _, cmd := range commandNames {
 		longCode, longOut, longErr := runCLI(t, cmd, "--help")
@@ -78,6 +95,13 @@ func TestHelpFormsMatch(t *testing.T) {
 		}
 		if cmd == "init" || cmd == "edit" {
 			for _, phrase := range []string{"VISUAL", "code --wait", "vim"} {
+				if !strings.Contains(longOut, phrase) {
+					t.Errorf("%s help missing %q", cmd, phrase)
+				}
+			}
+		}
+		if cmd == "run" || cmd == "docker" {
+			for _, phrase := range []string{"turns echo off", "one line", "last resort"} {
 				if !strings.Contains(longOut, phrase) {
 					t.Errorf("%s help missing %q", cmd, phrase)
 				}
@@ -196,6 +220,17 @@ func TestUsageAndShortPassphrase(t *testing.T) {
 	code, _, stderr = runCLI(t, "run", "--key-env", "X", "--key-stdin", "--", "true")
 	if code != 1 || !strings.Contains(stderr, "only one") {
 		t.Fatalf("multi key %d %s", code, stderr)
+	}
+	enc = filepath.Join(dir, "stdin-short.enc")
+	if err := os.WriteFile(enc, []byte("not ciphertext"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = runCLIStdin(t, "short\n", "run", "-f", enc, "--key-stdin", "--", "true")
+	if code != 4 || !strings.Contains(stderr, "too short") {
+		t.Fatalf("stdin short %d %s", code, stderr)
+	}
+	if strings.Contains(stderr, "Enter passphrase") {
+		t.Fatalf("piped --key-stdin prompted: %s", stderr)
 	}
 }
 
@@ -323,6 +358,14 @@ func TestSlowExitCodes(t *testing.T) {
 	code, _, stderr = runCLI(t, "decrypt", "-f", enc, "--key-env", "POGO_TEST_PASS_WRONG")
 	if code != 2 {
 		t.Fatalf("wrong key %d %s", code, stderr)
+	}
+	code, _, stderr = runCLIStdin(t, "pogo-test-passphrase-nope\n", "decrypt", "-f", enc, "--key-stdin")
+	if code != 2 || !strings.Contains(stderr, "Decryption failed") {
+		t.Fatalf("stdin wrong key %d %s", code, stderr)
+	}
+	code, stdout, stderr = runCLIStdin(t, "  pogo-test-passphrase \n", "decrypt", "-f", enc, "--key-stdin")
+	if code != 0 || stdout != body {
+		t.Fatalf("stdin decrypt %d %q %s", code, stdout, stderr)
 	}
 	tampered := append([]byte(nil), blob...)
 	tampered[len(tampered)-1] ^= 0x5a

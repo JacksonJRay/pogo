@@ -49,7 +49,8 @@ Never place the passphrase in shell history, logs, version control, or a file.
 - Never write the passphrase to a file, even a mode-0600 file under /run, /tmp, or a Compose secret
 - Never pass `--key-file` or `--new-key-file`. Pogo rejects them on purpose
 - Prefer the interactive prompt when a person is at the terminal
-- For a script, pipe the passphrase with `--key-stdin`, or use `--key-env` only in that process. `--key-env` is visible to `docker inspect` and `/proc`
+- Prefer `--key-stdin` over `--key-env`. Pipe the passphrase, for example `printf '%s' "$PASS" | pogo run --key-stdin -- cmd`, or `op read ... | pogo ...`. `--key-env` leaves the passphrase in the process environment, which is visible in `/proc` and `docker inspect`. Use `--key-env` only as a last resort
+- `bash -lc` can reset `PATH`, so install pogo to `/usr/local/bin` or call it by absolute path
 - After a successful convert, remind the user to remove the plaintext `.env`
 - Use `pogo <command> --help` whenever flag details are needed. For containers, read `pogo help docker`
 - Default encrypted filename is `.env.enc`; `pogo run -- <command>` uses it automatically

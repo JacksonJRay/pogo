@@ -1,9 +1,11 @@
 // Package passphrase reads a passphrase and checks its length.
 //
-// Interactive entry uses a terminal with echo disabled. Non-interactive
-// sources are an environment variable or stdin. Pogo does not read a
-// passphrase from a file. Confirmation (typing the passphrase twice) happens
-// only for interactive entry.
+// Interactive entry uses a terminal with echo disabled. An environment
+// variable is the other non-interactive source. Stdin is a pipe or a
+// terminal: a pipe is read until EOF and trimmed, and a terminal prompts
+// on stderr, turns echo off, and reads one line, the same as the interactive
+// prompt. Pogo does not read a passphrase from a file. Confirmation (typing
+// the passphrase twice) happens only for interactive entry.
 package passphrase
 
 import (
@@ -40,6 +42,10 @@ var (
 // Source describes where the passphrase comes from.
 // At most one of Env and Stdin may be set. If neither is set, Pogo prompts
 // on the terminal. There is no file source.
+//
+// When Stdin is set and standard input is a terminal, Prompt is printed to
+// stderr (the usual interactive prompt when Prompt is empty). A pipe ignores
+// Prompt, reads until EOF, and trims the ends.
 type Source struct {
 	Env    string
 	Stdin  bool
@@ -72,7 +78,7 @@ func Acquire(src Source) ([]byte, error) {
 	case src.Env != "":
 		return readEnv(src.Env)
 	case src.Stdin:
-		return readStdin()
+		return readStdin(src.Prompt)
 	default:
 		prompt := src.Prompt
 		if prompt == "" {
@@ -131,7 +137,21 @@ func readEnv(name string) ([]byte, error) {
 	return b, nil
 }
 
-func readStdin() ([]byte, error) {
+func readStdin(prompt string) ([]byte, error) {
+	// A terminal is the interactive prompt: one line, echo off, no trim.
+	// A pipe keeps the previous contract: read until EOF and trim the ends.
+	// Confirmation is not asked here. Callers that want it use the
+	// interactive path, which is the only place a passphrase is typed twice.
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		if prompt == "" {
+			prompt = "Enter passphrase (min 15 characters): "
+		}
+		return readInteractive(prompt)
+	}
+	return readStdinPipe()
+}
+
+func readStdinPipe() ([]byte, error) {
 	b, err := io.ReadAll(io.LimitReader(os.Stdin, MaxBytes+65))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read passphrase from stdin: %w", err)
