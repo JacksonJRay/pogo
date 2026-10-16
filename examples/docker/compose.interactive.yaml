@@ -1,0 +1,21 @@
+# Interactive passphrase inside Compose.
+# When to use: a person is at the keyboard.
+# Security: the passphrase is typed. docker inspect does not show it.
+#
+# Build examples/docker/alpine.Dockerfile as pogo-entrypoint-alpine:e2e and
+# put .env.enc in this directory first. The entrypoint has no --key-stdin,
+# so Pogo prompts. You will see:
+#   Enter passphrase (min 15 characters):
+#
+#   docker compose -f examples/docker/compose.interactive.yaml up -d
+#   docker attach "$(docker compose -f examples/docker/compose.interactive.yaml ps -q app)"
+#
+# Or, without detach: docker compose -f examples/docker/compose.interactive.yaml run --rm app
+
+services:
+  app:
+    image: pogo-entrypoint-alpine:e2e
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./.env.enc:/app/.env.enc:ro

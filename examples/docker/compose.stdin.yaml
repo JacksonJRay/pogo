@@ -1,0 +1,17 @@
+# Piped passphrase inside Compose.
+# When to use: a script, read -rs, or a password manager.
+# Security: stdin is consumed, so the program cannot also read it.
+# docker inspect does not show the passphrase. Do not write it to a file.
+#
+#   read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker compose -f examples/docker/compose.stdin.yaml run -T --rm app ; unset POGO_PASS
+#   op read op://vault/pogo/passphrase | docker compose -f examples/docker/compose.stdin.yaml run -T --rm app
+#
+# -T is required. Without it, Compose allocates a terminal and the pipe is not the passphrase.
+
+services:
+  app:
+    image: pogo-entrypoint-alpine:e2e
+    entrypoint: ["pogo", "run", "-f", "/app/.env.enc", "--key-stdin", "--"]
+    command: ["/app/pid1"]
+    volumes:
+      - ./.env.enc:/app/.env.enc:ro

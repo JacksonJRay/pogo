@@ -1,0 +1,15 @@
+{
+  "name": "pogo-shared-env-demo-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1 --strictPort"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.2.12",
+    "@sveltejs/kit": "^2.21.1",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.28.2",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,0 +1,51 @@
+# What reaches a container when pogo is on the host, in front of Compose.
+#
+#   pogo run --key-env POGO_KEY -- docker compose -f examples/docker/compose.host.yaml up \
+#     --abort-on-container-exit --exit-code-from passed
+#
+# Compose reads ${VAR} from its own environment (the environment pogo just
+# loaded) and from a .env file next to this file. It does not forward every
+# variable into the container.
+#
+# - `environment: - API_KEY` copies that name from the Compose process.
+# - `TITLE: ${SPACED_VALUE}` interpolates on the host, then sets TITLE.
+# - JWT_SECRET is visible to Compose and is not listed, so `omitted` does not see it.
+# - A newline survives the list form (`- MULTILINE_VALUE`). Unquoted ${MULTILINE_VALUE}
+#   inside a YAML scalar can break the file. Prefer the list form for those values.
+#
+# `sudo` drops this environment unless you pass -E:
+#   pogo run --key-env POGO_KEY -- sudo -E docker compose -f examples/docker/compose.host.yaml up
+
+name: pogo-host-feed
+
+services:
+  passed:
+    image: alpine:3.20
+    environment:
+      - PORT
+      - HOST
+      - DATABASE_URL
+      - API_KEY
+      - JWT_SECRET
+      - QUOTED_VALUE
+      - SPACED_VALUE
+      - EQUALS_VALUE
+      - MULTILINE_VALUE
+      - VITE_PUBLIC_TITLE
+      - NEXT_PUBLIC_TITLE
+    volumes:
+      - ../../scripts/docker_env.sh:/env.sh:ro
+    command: ["sh", "/env.sh"]
+  interpolated:
+    image: alpine:3.20
+    environment:
+      TITLE: ${SPACED_VALUE}
+    command: ["sh", "-c", "printf '%s' \"$$TITLE\""]
+  omitted:
+    image: alpine:3.20
+    environment:
+      - API_KEY
+    command:
+      - sh
+      - -c
+      - if [ -n "$${JWT_SECRET+x}" ]; then echo JWT_PRESENT; else echo JWT_ABSENT; fi

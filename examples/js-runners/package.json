@@ -1,0 +1,9 @@
+{
+  "name": "pogo-js-runners-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node print-env.js",
+    "dev": "node spawn.js"
+  }
+}

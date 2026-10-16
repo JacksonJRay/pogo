@@ -1,0 +1,110 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.75.0"
+  },
+  "ReportID": "01a14595-7666-7036-bff3-bb8cb657d461",
+  "CreatedAt": "2026-10-16T16:39:45.510015483Z",
+  "ArtifactID": "sha256:88af7b9e3bcac71c3a40594d4e2ec65e4638083c8b7064d5bb0ac5b1aba0e1a9",
+  "ArtifactName": ".",
+  "ArtifactType": "repository",
+  "Results": [
+    {
+      "Target": "go.mod",
+      "Class": "lang-pkgs",
+      "Type": "gomod",
+      "Packages": [
+        {
+          "ID": "pogo",
+          "Name": "pogo",
+          "Identifier": {
+            "PURL": "pkg:golang/pogo",
+            "UID": "7c22bdd49558382b"
+          },
+          "Relationship": "root",
+          "DependsOn": [
+            "golang.org/x/crypto@v0.58.0",
+            "golang.org/x/sys@v0.49.0",
+            "golang.org/x/term@v0.47.0"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "golang.org/x/crypto@v0.58.0",
+          "Name": "golang.org/x/crypto",
+          "Identifier": {
+            "PURL": "pkg:golang/golang.org/x/crypto@v0.58.0",
+            "UID": "eebf64e0333ed3a2"
+          },
+          "Version": "v0.58.0",
+          "Licenses": [
+            "BSD-3-Clause"
+          ],
+          "Relationship": "direct",
+          "DependsOn": [
+            "golang.org/x/sys@v0.49.0",
+            "golang.org/x/term@v0.47.0"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "golang.org/x/sys@v0.49.0",
+          "Name": "golang.org/x/sys",
+          "Identifier": {
+            "PURL": "pkg:golang/golang.org/x/sys@v0.49.0",
+            "UID": "2524e5101427b2e9"
+          },
+          "Version": "v0.49.0",
+          "Licenses": [
+            "BSD-3-Clause"
+          ],
+          "Relationship": "direct",
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "golang.org/x/term@v0.47.0",
+          "Name": "golang.org/x/term",
+          "Identifier": {
+            "PURL": "pkg:golang/golang.org/x/term@v0.47.0",
+            "UID": "cf091795d04b186d"
+          },
+          "Version": "v0.47.0",
+          "Licenses": [
+            "BSD-3-Clause"
+          ],
+          "Relationship": "direct",
+          "DependsOn": [
+            "golang.org/x/sys@v0.49.0"
+          ],
+          "AnalyzedBy": "gomod"
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "GO-2026-5932",
+          "PkgID": "golang.org/x/crypto@v0.58.0",
+          "PkgName": "golang.org/x/crypto",
+          "PkgIdentifier": {
+            "PURL": "pkg:golang/golang.org/x/crypto@v0.58.0",
+            "UID": "eebf64e0333ed3a2"
+          },
+          "InstalledVersion": "v0.58.0",
+          "Status": "affected",
+          "DataSource": {
+            "ID": "govulndb",
+            "Name": "The Go Vulnerability Database",
+            "URL": "https://pkg.go.dev/vuln/"
+          },
+          "Fingerprint": "sha256:cbcf04a3670b7dd0fa76ed766656ff9d2df586f160ba9331f2c74299ce3a5d7f",
+          "Title": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "Description": "The golang.org/x/crypto/openpgp package is unsafe by design, has numerous known security issues, is not maintained, and should not be used.\n\nIf you are required to interoperate with OpenPGP systems and need a maintained package, consider github.com/ProtonMail/go-crypto/openpgp which is a maintained fork that aims to be a drop-in replacement for this package.",
+          "Severity": "UNKNOWN",
+          "References": [
+            "https://go.dev/issue/44226",
+            "https://pkg.go.dev/vuln/GO-2026-5932"
+          ]
+        }
+      ]
+    }
+  ]
+}

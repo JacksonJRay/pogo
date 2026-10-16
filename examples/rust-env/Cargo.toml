@@ -1,0 +1,8 @@
+[package]
+name = "pogo-rust-example"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "pogo-rust-example"
+path = "src/main.rs"

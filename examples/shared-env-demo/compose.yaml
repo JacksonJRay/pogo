@@ -1,0 +1,32 @@
+# Node app for the shared-env demo. Flask and SvelteKit stay on the host.
+# This service does not use a Compose secret. The image entrypoint is
+# `pogo run --key-stdin`, so pipe the passphrase and disable the TTY:
+#
+#   read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker compose run -T --service-ports --rm node ; unset POGO_PASS
+#
+# You will not see a prompt. Stdin is consumed by Pogo; Node does not read it.
+# When to use: starting this container from a shell without storing the passphrase.
+# Security: the variable exists until unset. docker inspect does not show it.
+#
+# Interactive alternative (a person types the prompt "Enter passphrase (min 15 characters): "):
+#   docker compose run --service-ports --entrypoint pogo node run -f /app/.env.enc -- node server.js
+#
+# Build context is the repo root because the image copies the static pogo binary.
+
+name: pogo-shared-env
+
+services:
+  node:
+    build:
+      context: ../..
+      dockerfile: examples/shared-env-demo/node/Dockerfile
+    image: pogo-shared-node:local
+    ports:
+      - "43123:43123"
+    volumes:
+      - type: bind
+        source: ./.env.enc
+        target: /app/.env.enc
+        read_only: true
+    environment:
+      HOST: 0.0.0.0

@@ -1,0 +1,16 @@
+.git
+**/.git
+**/node_modules
+**/.svelte-kit
+**/.next
+**/build
+dist
+uploads
+**/.editor-work
+examples/go-web/tmp
+examples/go-web/server
+examples/rust-env/target
+**/*.enc
+**/.env
+!**/.env.example
+e2e-results.txt
