@@ -26,8 +26,8 @@ Flags on every command:
 | Flag | Default | Meaning |
 |---|---|---|
 | `-f`, `--file` | `.env.enc` | Encrypted file path. On `encrypt` and `convert` this is the output |
-| `--key-env` | none | Read the passphrase from this environment variable. Exact value, no trim. `pogo run` removes it from the child |
-| `--key-stdin` | off | Read all of stdin, trim whitespace, and use that as the passphrase |
+| `--key-env` | none | Last resort. Exact value, no trim. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. `pogo run` removes it from the child. Prefer `--key-stdin` |
+| `--key-stdin` | off | Pipe: read all of stdin and trim whitespace. Terminal: prompt on stderr, echo off, one line |
 | `--min-length` | 15 | Minimum passphrase length in characters. Lowest allowed value is 1 |
 | `-h`, `--help` |  | Show help and exit 0 |
 
@@ -59,9 +59,10 @@ Use one method only. If you pass more than one of `--key-env` and `--key-stdin`,
 |---|---|---|
 | You are at a terminal | Type it when asked | Nothing is stored. You type it twice when creating or rekeying |
 | Docker, a person | `docker run -it` or `docker compose run` | Same prompt. See `pogo help docker` |
-| A pipe, password manager, or `read -rs` | `--key-stdin` | Stdin is consumed. The program sees end-of-file. Not shown by `docker inspect` |
-| A process already has the variable | `--key-env POGO_KEY` | Pogo removes it from the child. `docker inspect` and `/proc` still show it if you passed `-e` |
-| An agent or script | `--key-stdin` or the prompt | Never write the passphrase to a file |
+| A pipe, password manager, or `read -rs` | `--key-stdin` | Prefer this. Stdin is consumed. The program sees end-of-file. Not shown by `docker inspect` |
+| `--key-stdin` and stdin is a terminal | Prompt, echo off, one line | Same as the interactive prompt. The program keeps the terminal. You do not press Ctrl-D |
+| A process already has the variable | `--key-env POGO_KEY` | Last resort. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. Pogo removes it from the child |
+| An agent or script | `--key-stdin` | Prefer this over `--key-env`. `bash -lc` can reset `PATH`: install pogo to `/usr/local/bin` or call it by absolute path |
 
 Interactive prompts:
 
@@ -76,7 +77,7 @@ Never put the passphrase in shell history, logs, source control, a file, or comm
 
 `pogo help docker` and `pogo skill --framework docker` are the step-by-step container recipes: interactive `-it`, `--key-stdin` from `read -rs` or a password manager, `--key-env`, and Compose (`docker compose run` versus `docker compose run -T`).
 
-`--key-stdin` reads the entire stdin and trims leading and trailing whitespace. `--key-env` uses the variable's exact value, with no trim. Typed passphrases are used exactly as entered (the terminal already strips the newline).
+When stdin is a pipe, `--key-stdin` reads the entire stdin and trims leading and trailing whitespace. When stdin is a terminal, `--key-stdin` prints the passphrase prompt to stderr, turns echo off, and reads one line (the newline is not part of the passphrase, and the line is not trimmed). `--key-env` uses the variable's exact value, with no trim, and is a last resort because the passphrase stays in the process environment (`/proc`, `docker inspect`). Typed passphrases without a key flag are used exactly as entered (the terminal already strips the newline).
 
 When you create a file (`init`, `convert`, `encrypt`) or set a new passphrase (`rekey`), interactive entry is confirmed by typing it twice. `--key-env` and `--key-stdin` are not confirmed a second time. Pogo will not read a passphrase from a file.
 

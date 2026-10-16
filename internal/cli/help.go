@@ -202,8 +202,9 @@ docker run -it --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE`,
 Key from an environment variable. Pogo removes it from the child. If you pass that variable into Docker with -e, docker inspect still shows it:
   pogo run --key-env POGO_KEY -- ./server
 
-Key on stdin. The program cannot also read stdin. Do not read the passphrase from a file:
+Key on stdin. A pipe is read completely and trimmed, and the program sees end-of-file, so it cannot also read stdin. Do not read the passphrase from a file:
   printf '%s' "$POGO_PASS" | pogo run --key-stdin -- ./server
+When stdin is a terminal, --key-stdin prints the passphrase prompt to stderr, turns echo off, and reads one line. That is the same as the interactive prompt. You do not press Ctrl-D. docker run -it with a --key-stdin entrypoint does this.
 
 Docker, step by step (same text as pogo help docker):
 ` + dockerPassphraseGuide(),
@@ -458,6 +459,10 @@ Recipe 2. --key-stdin from a prompt.
     ENTRYPOINT ["pogo","run","-f","/app/.env.enc","--key-stdin","--"]
     CMD ["node","server.js"]
     read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE ; unset POGO_PASS
+    If stdin is a terminal, this same --key-stdin entrypoint does not wait for Ctrl-D and does not echo the passphrase.
+    docker run -it prints "Enter passphrase (min 15 characters): " to stderr, turns echo off, and reads one line.
+    That is the same as the interactive prompt. The program keeps the terminal.
+    A pipe (docker run -i, or docker compose run -T) still reads all of stdin, trims the ends, and the program sees end-of-file.
 
 Recipe 3. --key-stdin from a password manager.
     When to use: 1Password, pass, or another manager can print the passphrase.
@@ -466,7 +471,7 @@ Recipe 3. --key-stdin from a password manager.
     op read op://vault/pogo/passphrase | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
     pass show pogo | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 
-Recipe 4. --key-env.
+Recipe 4. --key-env. Last resort. Prefer --key-stdin.
     When to use: POGO_KEY is already in the environment of the command that starts Docker, and you accept the tradeoff.
     Security: docker inspect shows POGO_KEY. It is also visible in /proc while the container runs. Pogo removes POGO_KEY from the program it execs, but Docker has already stored the value. Do not write the value in the command.
     ENTRYPOINT ["pogo","run","-f","/app/.env.enc","--key-env","POGO_KEY","--"]
@@ -484,6 +489,8 @@ Recipe 5. Compose.
     A pipe uses the step 2 entrypoint. -T means no terminal, so the pipe is stdin:
     read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker compose run -T --rm app ; unset POGO_PASS
     op read op://vault/pogo/passphrase | docker compose run -T --rm app
+
+--key-stdin on a terminal. docker run -it with a --key-stdin entrypoint prints the passphrase prompt, turns echo off, and reads one line. You do not press Ctrl-D. A pipe still uses docker run -i or docker compose run -T.
 
 Troubleshooting. When stdin is not a terminal and you did not pass --key-stdin or --key-env, Pogo exits 1 and prints:
 
@@ -655,11 +662,19 @@ func commonFlags() string {
 --key-env NAME
     Read the passphrase from the environment variable NAME. The value is used exactly, with no trimming.
     When you "pogo run", Pogo removes NAME from the program's environment so the passphrase is not passed on.
+    The variable stays in this process's environment, so it is visible in /proc and in docker inspect.
+    Prefer --key-stdin. For example: printf '%s' "$PASS" | pogo run --key-stdin -- cmd
+    or: op read ... | pogo run --key-stdin -- cmd
+    Use --key-env only as a last resort.
     Default: unset.
 
 --key-stdin
-    Read all of standard input, trim leading and trailing whitespace, and use that as the passphrase.
-    The program started by "pogo run" then sees end-of-file on stdin.
+    Read the passphrase from standard input.
+    When stdin is a pipe, Pogo reads all of it, trims leading and trailing whitespace, and uses that as the passphrase.
+    The program started by "pogo run" then sees end-of-file on stdin, so that program cannot also read stdin.
+    When stdin is a terminal, Pogo prints the usual passphrase prompt to stderr, turns echo off, and reads one line.
+    That is the same as the interactive prompt. docker run -it with a --key-stdin entrypoint does this.
+    You do not press Ctrl-D. The program keeps the terminal.
     Default: off. If you also did not set --key-env, Pogo asks in the terminal.
     Pogo will not read a passphrase from a file. --key-file was removed.
 
@@ -684,7 +699,7 @@ func forceFlag() string {
 
 func securityNotes() string {
 	return `A passphrase is a long password. Pogo never writes it to disk, and it will not read one from a file.
---key-file and --new-key-file were removed on purpose. A file that can decrypt the env file would be another secret stored on the system. Type the passphrase, pipe it with --key-stdin, or use --key-env. --key-env is visible to anything that can read the process environment, including docker inspect and /proc.
+--key-file and --new-key-file were removed on purpose. A file that can decrypt the env file would be another secret stored on the system. Type the passphrase, or pipe it with --key-stdin. Prefer --key-stdin over --key-env. --key-env leaves the passphrase in the process environment, which is visible in /proc and docker inspect, so use it only as a last resort.
 Pogo uses AES-256-GCM, which is the encryption, and Argon2id, which turns your passphrase into the key slowly so guessing is expensive. You do not configure either one. The slow step uses 128 MiB of memory, 4 passes, and 4 lanes. Each save gets a new random salt and a new random nonce (extra random bytes so two saves of the same text do not look alike).
 The file header (including those parameters) is checked as part of decryption. A wrong passphrase or a flipped bit fails decryption (exit 2).
 There is no network access and no telemetry.

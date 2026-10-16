@@ -81,8 +81,8 @@ The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every comma
 | Flag | Default | Meaning |
 |---|---|---|
 | `-f`, `--file` | `.env.enc` | Encrypted file. On `encrypt` and `convert`, the file Pogo writes |
-| `--key-env NAME` | none | Read the passphrase from that variable, exactly, with no trim. `pogo run` removes `NAME` from the child. Visible to `docker inspect` and `/proc` if you pass it into Docker |
-| `--key-stdin` | off | Read all of stdin, trim ends, use that as the passphrase. The child then sees end-of-file. The program cannot also read stdin |
+| `--key-env NAME` | none | Last resort. Read the passphrase from that variable, exactly, with no trim. It stays in the process environment, so `/proc` and `docker inspect` can show it. `pogo run` removes `NAME` from the child. Prefer `--key-stdin` |
+| `--key-stdin` | off | Pipe: read all of stdin, trim ends; the child sees end-of-file. Terminal: prompt on stderr, echo off, one line (same as the interactive prompt) |
 | `--min-length N` | 15 | Minimum passphrase length in characters (Unicode). Lowest allowed value is 1. Below 15, Pogo warns. Checked before the slow key step. Exit 4 if shorter |
 | `--env NAME` | none | On `run` and `decrypt`, also load the `[NAME]` section. Those keys replace top-level keys with the same name |
 | `--no-override` | off | On `run`, keep variables that are already set. By default the encrypted file wins |
@@ -205,7 +205,7 @@ Flask is http://127.0.0.1:43121, SvelteKit is http://127.0.0.1:43122, and the co
 | A person at the keyboard | Interactive `docker run -it`, or `docker compose run`, or `docker compose up` then `docker attach` | Typed, not stored, not in `docker inspect` |
 | A shell, once, at start | `--key-stdin` from `read -rs`, then `unset` | The shell variable exists until you unset it. Not in `docker inspect`. Stdin is consumed, so the app cannot also read stdin |
 | Holding a password manager | `--key-stdin` from `op read` or `pass show` | Do not write that output to a file. Stdin is consumed. Not in `docker inspect` |
-| Already exporting the variable | `--key-env` and `docker run -e POGO_KEY` | `docker inspect` and `/proc` show it. Pogo removes `POGO_KEY` from the program it execs. Do not write the value in the command |
+| Already exporting the variable | `--key-env` and `docker run -e POGO_KEY` | Last resort. `docker inspect` and `/proc` show it. Pogo removes `POGO_KEY` from the program it execs. Do not write the value in the command |
 | Compose, a person | `docker compose run`, or `up` with `stdin_open: true` and `tty: true`, then `docker attach` | Same as interactive |
 | Compose, a pipe | `docker compose run -T` with the `--key-stdin` entrypoint | Same as `--key-stdin`. `-T` is required or Compose allocates a terminal and the pipe is not the passphrase |
 
@@ -260,6 +260,8 @@ CMD ["node","server.js"]
 read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE ; unset POGO_PASS
 ```
 
+If that entrypoint is started with a terminal (`docker run -it`), Pogo prints `Enter passphrase (min 15 characters): ` to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. That is the same as the interactive prompt. The program keeps the terminal. A pipe (`docker run -i`, or `docker compose run -T`) still reads all of stdin, trims the ends, and the program then sees end-of-file.
+
 ### 3. `--key-stdin` from a password manager
 
 When to use: 1Password (`op`), `pass`, or another manager can print the passphrase.
@@ -273,7 +275,7 @@ pass show pogo | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 
 ### 4. `--key-env`
 
-When to use: `POGO_KEY` is already in the environment of the command that starts Docker, and you accept the tradeoff.
+Last resort. Prefer `--key-stdin` (`printf '%s' "$PASS" | pogo run --key-stdin -- cmd`, or `op read ... | pogo ...`). When to use: `POGO_KEY` is already in the environment of the command that starts Docker, and you accept the tradeoff.
 
 Security: `docker inspect` shows `POGO_KEY`. It is also visible in `/proc` while the container runs. Pogo removes `POGO_KEY` from the program it execs, but Docker has already stored the value. Do not write the value in the command.
 
@@ -312,6 +314,10 @@ read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker compose run -T --rm app 
 op read op://vault/pogo/passphrase | docker compose run -T --rm app
 ```
 
+### `--key-stdin` and a terminal
+
+`docker run -it` on an image whose entrypoint is `pogo run -f /app/.env.enc --key-stdin --` prints the passphrase prompt, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. A pipe still uses `docker run -i` or `docker compose run -T`.
+
 ### Troubleshooting: no TTY
 
 When stdin is not a terminal and you did not pass `--key-stdin` or `--key-env`, Pogo exits 1 and prints:
@@ -347,7 +353,7 @@ Compose interpolates `${VAR}` from the process Pogo started, and from a `.env` f
 - Production saves always use the default Argon2id parameters. Tests use a tiny parameter set.
 - Default override: the encrypted file replaces variables already in the environment. `--no-override` keeps the existing value. For duplicate entries already in the environment, the first one wins, which is the POSIX rule.
 - `[section]` plus `--env` is the reading of "several environments in one file." There is no return-to-top syntax.
-- `--key-file` and `--new-key-file` were removed. Pogo will not read a passphrase from a file. `--key-env` does not trim and is stripped from the child. `--key-stdin` trims and consumes stdin.
+- `--key-file` and `--new-key-file` were removed. Pogo will not read a passphrase from a file. `--key-env` does not trim, is stripped from the child, and is a last resort because the passphrase stays visible in `/proc` and `docker inspect`. `--key-stdin` on a pipe trims and consumes stdin. `--key-stdin` on a terminal prompts with echo off and reads one line.
 - Passphrase length is counted in Unicode characters. The floor is 1. Below 15, Pogo warns and still accepts it when you pass `--min-length`.
 - Maximum passphrase size is 4096 bytes.
 - `pogo run` looks up the command on `PATH` (`exec.LookPath`) and then `syscall.Exec`. Defers do not run after a successful exec, so buffers are wiped first. The child's exit code and signals are the operating system's, not a wrapper's.

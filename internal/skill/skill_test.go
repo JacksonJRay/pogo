@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestAgentRules(t *testing.T) {
+	text := string(Document)
+	for _, phrase := range []string{
+		"Prefer `--key-stdin` over `--key-env`",
+		"printf '%s' \"$PASS\" | pogo run --key-stdin -- cmd",
+		"op read ... | pogo",
+		"visible in `/proc` and `docker inspect`",
+		"only as a last resort",
+		"`bash -lc` can reset `PATH`",
+		"/usr/local/bin",
+		"Never pass `--key-file` or `--new-key-file`",
+	} {
+		if !bytes.Contains(Document, []byte(phrase)) {
+			t.Errorf("skill rules missing %q", phrase)
+		}
+	}
+	if !bytes.Contains([]byte(text), []byte("## Rules for agents")) {
+		t.Fatal("missing rules section")
+	}
+}
+
 func TestFrameworkIDs(t *testing.T) {
 	ids := IDs()
 	need := []string{"express", "node", "sveltekit", "go", "flask", "fastapi", "django", "vite", "nextjs", "shell", "rust"}
