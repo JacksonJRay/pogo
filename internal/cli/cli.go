@@ -28,7 +28,7 @@ func Main(args []string, version string) int {
 		fmt.Fprintf(os.Stdout, "pogo %s\n", version)
 		return 0
 	}
-	code, err := dispatch(p.cmd, p.opts)
+	code, err := dispatch(p.cmd, p.opts, version)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 	}

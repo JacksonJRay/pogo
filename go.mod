@@ -9,3 +9,5 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 )
+
+require golang.org/x/crypto/x509roots/fallback v0.0.0-20261016151342-0ae6809b7559

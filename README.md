@@ -1,6 +1,6 @@
 # Pogo
 
-Pogo encrypts env files and loads them into a program at startup. One static binary. No network access, no telemetry, no language SDK.
+Pogo encrypts env files and loads them into a program at startup. One static binary. No telemetry and no language SDK. Commands other than `pogo upgrade` do not use the network.
 
 A passphrase is the long password for a file. Pogo does not save it and will not read it from a file. exec means Pogo replaces itself with your program, so Ctrl-C and the exit code belong to that program.
 
@@ -20,9 +20,9 @@ pogo run -- npm start
 - Every save uses a new random 16-byte salt and a new random 12-byte nonce, so two saves of the same text do not look alike.
 - The header (magic `POGO`, version, KDF parameters, salt, nonce) is authenticated with the ciphertext. A wrong passphrase or a flipped bit fails decryption (exit 2).
 - The passphrase is never written to disk. There is no `--passphrase` flag.
-- No network and no telemetry.
+- No telemetry. `pogo upgrade` is the only command that uses the network. It downloads a release over HTTPS and checks SHA256SUMS before it replaces the binary.
 - Pogo zeroes passphrase and key bytes after use. Go can keep copies the program cannot reach. Zeroing is not a guarantee.
-- Temp files for the editor are mode 0600 in a directory of mode 0700, on `/dev/shm` when that memory disk exists. Pogo attempts to overwrite and remove them after a save, editor failure, or handled interrupt. SIGKILL, power loss, storage behavior, and editor-created copies can leave plaintext behind.
+- Temp files for the editor are mode 0600 in a directory of mode 0700. Pogo prefers `$XDG_RUNTIME_DIR` when that directory is writable, then `/dev/shm`, then the system temp directory. It overwrites and removes them after a save, editor failure, a handled signal, or `POGO_EDIT_TIMEOUT`. SIGKILL, power loss, storage behavior, and editor-created copies can leave plaintext behind.
 - Encrypted files are written by rename, mode 0600.
 - Pogo tries to set `RLIMIT_CORE` to 0 so a crash is less likely to dump secrets. That can fail on some systems.
 - Plaintext larger than 32 MiB is refused. Hostile headers cannot ask for more than 1 GiB of KDF memory, 100 iterations, or 32 lanes.
@@ -58,6 +58,25 @@ not a dynamic executable
 
 `dist/pogo-linux-arm64` is statically linked as well. The darwin binaries are Mach-O files built with `CGO_ENABLED=0`. `file` still reports `DYLDLINK` for those, because Go on macOS uses libSystem.
 
+## Install and upgrade
+
+Copy the binary for your OS and CPU somewhere on `PATH`, for example `/usr/local/bin`. The asset names are `pogo-linux-amd64`, `pogo-linux-arm64`, `pogo-darwin-amd64`, and `pogo-darwin-arm64`, next to `SHA256SUMS` on the GitHub release.
+
+```bash
+pogo upgrade --check
+pogo upgrade
+pogo upgrade --yes
+pogo upgrade --version v1.0.3
+```
+
+`pogo upgrade` reads `https://api.github.com/repos/JacksonJRay/pogo/releases/latest` (no token unless `GITHUB_TOKEN` is set, and that token is sent only to `api.github.com`). It downloads `pogo-<os>-<arch>` and `SHA256SUMS` over HTTPS, using the same proxy settings as other programs (`HTTPS_PROXY`). It checks the SHA256 before it touches the installed binary. The new file's `version` command must print the expected version, and then Pogo renames it into place.
+
+If this binary is already current, the output is `pogo 1.0.4 is the latest version` and the exit code is 0. Pogo does not install an older release unless `--version` names it. `--check` prints the versions and does not install: exit 0 when current, exit 10 when a different release would be installed. A terminal shows `current -> latest` and asks `Install? [y/N]`. With no terminal, pass `--yes`, or Pogo exits 1 and tells you to add it.
+
+If the install directory is not writable, Pogo exits 1, leaves the original binary in place, and tells you to rerun with sudo or to move `pogo` somewhere you own. A Nix store path (`/nix/store/`) or a Guix store path (`/gnu/store/`) is left untouched when an install would happen. `pogo upgrade --check` still prints the versions and exits 0 or 10. Upgrade that copy with the package manager. `POGO_UPGRADE_API` replaces the API address and is for tests. Leave it unset.
+
+If the machine has no CA certificates, Pogo uses a built-in Mozilla root set so the HTTPS check can still succeed. System certificates are used when they exist. `SSL_CERT_FILE` and `SSL_CERT_DIR` still select a custom CA. If GitHub cannot be reached, Pogo exits 1, leaves the binary untouched, and prints `pogo: could not reach GitHub to check for updates:` plus a short reason, with advice to check the network or `HTTPS_PROXY`, set `SSL_CERT_FILE` for a custom CA, or download from https://github.com/JacksonJRay/pogo/releases/latest.
+
 ## Commands
 
 | Command | What it does |
@@ -73,7 +92,8 @@ not a dynamic executable
 | `pogo help [command]` | Help. Same as `pogo <command> --help` and `pogo <command> -h` |
 | `pogo version` | Print the version. Same as `pogo -V` and `pogo --version` |
 | `pogo docker` | Print the Docker guide. Same as `pogo help docker`. Does not start a container |
-| `pogo doctor` | Report which passphrase prompt would be used, without asking |
+| `pogo upgrade` | Replace this binary with a GitHub release, or `--check` without installing |
+| `pogo doctor` | Report which passphrase prompt would be used, and which editor `edit` would run, without asking |
 
 The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every command. A path typed after the command sets the same thing. If both are given and they differ, Pogo exits 1. For `decrypt`, one extra path is the plaintext output, and `-f` is the encrypted input.
 
@@ -91,6 +111,9 @@ The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every comma
 | `--new-key-env` | none | On `rekey`, read the new passphrase from a variable |
 | `--list` | off | On `skill`, print framework names |
 | `--framework NAME` | none | On `skill`, print one framework section |
+| `--check` | off | On `upgrade`, compare versions and do not install. Exit 10 when a different release would be installed |
+| `--yes` | off | On `upgrade`, install without asking. Required when stdin is not a terminal |
+| `--version vX.Y.Z` | latest | On `upgrade` only, install that release, including an older one. `pogo --version` with no command still prints the running version |
 | `-h`, `--help` |  | Help, exit 0 |
 
 Use only one of `--key-env` and `--key-stdin`. If you pass neither and stdin is a terminal, Pogo asks in the terminal and waits until you type or press Ctrl-C. Set `POGO_TTY_TIMEOUT` to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. Confirmation (typing the passphrase twice) happens for that prompt and for the out-of-band prompts below. `--key-env` and `--key-stdin` are still read once. `--key-file` and `--new-key-file` were removed: Pogo exits 1 and tells you to type the passphrase or use `--key-stdin`. A file that can decrypt the env file would be another secret stored on the system.
@@ -108,11 +131,11 @@ An agent runs `pogo doctor`, then `pogo run -- <command>` with no key flags, and
 If nothing can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`.
 
 ```text
-Enter passphrase (min 15 characters):
-Enter it again to confirm:
+New passphrase for .env.enc:
+Confirm new passphrase for .env.enc:
 ```
 
-That prompt is for creating a passphrase. Opening an existing file asks `Enter passphrase: ` and does not mention a minimum. `rekey` asks for the current passphrase, then the new one, then confirmation. The new passphrase uses the creation minimum.
+That pair is for creating a passphrase. The same two questions are asked through the terminal, `POGO_ASKPASS`, the editor box, or a desktop askpass. A mismatch exits 4 and writes nothing. Opening an existing file asks once. On a terminal that line is `Enter passphrase: `. `rekey` asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice. Cursor titles those boxes from `pogo-passphrase-for-<file>.invalid`, `pogo-new-passphrase-for-<file>.invalid`, and `pogo-confirm-passphrase-for-<file>.invalid`. The username, if shown, stays `pogo-passphrase`.
 
 ### Multiple environments
 
@@ -138,14 +161,15 @@ Duplicate keys: the last one wins. Pogo does not expand `$VAR` inside values.
 | Code | Meaning |
 |---|---|
 | 0 | Success. For `pogo run`, once the program has started, this is the program's own exit code |
-| 1 | Usage or other error: bad flag, missing file, passphrase mismatch, program not found, interrupted edit |
+| 1 | Usage or other error: bad flag, missing file, cancelled prompt, no editor, program not found, interrupted edit, upgrade failed |
 | 2 | Decryption failed: wrong passphrase or damaged file |
-| 3 | The editor ran and exited non-zero. The encrypted file was not created or updated |
-| 4 | Creating a passphrase: shorter than 15 characters, or empty or only whitespace. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase. Opening an existing file: only an empty passphrase |
+| 3 | The editor ran and exited non-zero, or the edit was not valid env syntax and there was no terminal to fix it. The encrypted file was not created or updated |
+| 4 | Creating a passphrase: shorter than 15 characters, empty or only whitespace, or the two entries did not match. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase. Opening an existing file: only an empty passphrase |
+| 10 | `pogo upgrade --check` only. A different release would be installed. Nothing was installed |
 
 ## Editing
 
-Which editor opens: `$EDITOR` if it is set, otherwise `$VISUAL`, otherwise `vim`.
+On a terminal, the editor is `$POGO_EDITOR` if that is set, otherwise `$EDITOR`, otherwise `$VISUAL`, otherwise `vim`.
 
 ```bash
 pogo edit
@@ -153,9 +177,19 @@ EDITOR=nano pogo edit
 VISUAL=nano pogo init
 EDITOR="vim -n" pogo edit
 EDITOR="code --wait" pogo edit
+POGO_EDITOR="code --wait" pogo edit
 ```
 
-Pogo splits that value on spaces and adds the temp file as the last argument. It does not run a shell. VS Code and similar editors exit as soon as the window opens unless you pass their wait flag (`--wait` for VS Code). Pogo encrypts when the process exits.
+Without a terminal, an agent can still run `pogo edit`. The passphrase uses the usual prompt. The editor then opens where a person can see it, and Pogo waits until they save and close:
+
+1. `$POGO_EDITOR`, if set. It is a command, so `code --wait` is allowed.
+2. When `VSCODE_IPC_HOOK_CLI` is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with `--wait`. Pogo looks next to `$VSCODE_GIT_ASKPASS_NODE` in `bin/remote-cli`, then on `PATH` for `code-server`, `code`, `cursor`, then `codium`. If `TERM_PROGRAM` names one of those, that one is tried first. Stderr says `Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop).`
+3. `$EDITOR` or `$VISUAL` when it is a GUI editor that waits (`code --wait`, `cursor --wait`, `gedit -s`, `subl -w`) or any other command that is not a terminal editor. `vim`, `nano`, `vi`, and `emacs -nw` need a terminal, so they are skipped. A script in `EDITOR` still runs. `xdg-open` does not wait, so it is skipped.
+4. On a real display, a known waiting GUI editor on `PATH`. `xdg-open` is not used.
+
+If none of those can open a window, Pogo exits 1, names what it checked, and does not print the decrypted file. `POGO_EDIT_TIMEOUT` is a number of seconds. `0` waits until the editor exits. Unset, a terminal waits until the editor exits. Unset with no terminal and a GUI or remote-CLI editor, Pogo waits up to 10 minutes. If the file was saved before that deadline, Pogo encrypts the saved text and says so. If the saved text is unchanged, `.env.enc` is not rewritten. The saved text must parse as an env file. Without a terminal, a syntax error exits 3 and writes nothing.
+
+Pogo splits the editor value on spaces and adds the temp file as the last argument. It does not run a shell. VS Code and similar editors exit as soon as the window opens unless you pass their wait flag (`--wait` for VS Code). Pogo encrypts when the process exits.
 
 In vim, `:wq` writes and `:q!` discards. In nano, Ctrl+O writes and Ctrl+X quits. Ctrl-C inside the editor cancels the editor command. It does not stop Pogo, because the editor is the foreground program. Stop the `pogo` process with SIGTERM, or quit the editor, to abort. The temp file is deleted and the encrypted file is not changed.
 
@@ -240,7 +274,7 @@ docker run -it --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 You will see this prompt. Nothing is echoed as you type:
 
 ```text
-Enter passphrase (min 15 characters):
+Enter passphrase:
 ```
 
 Compose, attached terminal (same entrypoint, same prompt):
@@ -273,7 +307,7 @@ CMD ["node","server.js"]
 read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE ; unset POGO_PASS
 ```
 
-If that entrypoint is started with a terminal (`docker run -it`), Pogo prints `Enter passphrase (min 15 characters): ` to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. That is the same as the interactive prompt. The program keeps the terminal. A pipe (`docker run -i`, or `docker compose run -T`) still reads all of stdin, trims the ends, and the program then sees end-of-file.
+If that entrypoint is started with a terminal (`docker run -it`), Pogo prints `Enter passphrase: ` to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. That is the same as the interactive prompt. The program keeps the terminal. A pipe (`docker run -i`, or `docker compose run -T`) still reads all of stdin, trims the ends, and the program then sees end-of-file.
 
 ### 3. `--key-stdin` from a password manager
 

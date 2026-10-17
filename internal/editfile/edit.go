@@ -3,12 +3,14 @@
 package editfile
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +25,10 @@ import (
 
 const maxPlain = 32 << 20
 
+// DefaultNoTTYGUITimeout is how long pogo edit and pogo init wait for a GUI
+// or remote-CLI editor when stdin is not a terminal and POGO_EDIT_TIMEOUT is unset.
+const DefaultNoTTYGUITimeout = 10 * time.Minute
+
 var (
 	// ErrEditor means the editor process ran and exited non-zero.
 	ErrEditor = errors.New("editor exited non-zero")
@@ -30,7 +36,21 @@ var (
 	ErrEditorMissing = errors.New("editor not found")
 	// ErrInterrupted means Pogo received a signal and aborted the edit.
 	ErrInterrupted = errors.New("interrupted")
+	// ErrTimeout means the editor wait elapsed before the process exited
+	// and the temp file was unchanged.
+	ErrTimeout = errors.New("editor timed out")
 )
+
+// TimeoutSavedError means the editor wait elapsed after the temp file changed.
+// Content is the saved plaintext. The caller re-encrypts it.
+type TimeoutSavedError struct {
+	Content []byte
+	Wait    time.Duration
+}
+
+func (e *TimeoutSavedError) Error() string {
+	return "editor timed out after the file was saved"
+}
 
 // EditorCommand returns the editor a person asked for.
 // $EDITOR wins. If it is unset or blank, $VISUAL is used. If both are unset, vim.
@@ -44,10 +64,13 @@ func EditorCommand() string {
 	return "vim"
 }
 
-// TempBase prefers a memory-backed directory so the plaintext is less likely
-// to be written to a physical disk. On macOS /dev/shm does not exist and the
-// process temporary directory is used instead.
+// TempBase prefers a private runtime directory, then a memory-backed
+// directory, so the plaintext is less likely to land on a physical disk.
+// On macOS /dev/shm does not exist and the process temporary directory is used.
 func TempBase() string {
+	if d := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); d != "" && writableDir(d) {
+		return d
+	}
 	if writableDir("/dev/shm") {
 		return "/dev/shm"
 	}
@@ -76,18 +99,38 @@ type Session struct {
 	Path string
 }
 
+// Request is one editor invocation.
+type Request struct {
+	Initial []byte
+	// Command is split on whitespace. It is not passed to a shell.
+	Command string
+	// Announce, when set, is written to stderr after the temp file exists
+	// and before the editor starts.
+	Announce string
+	// Wait is the editor deadline when WaitSet is true. Zero waits until
+	// the editor exits. When WaitSet is false, POGO_EDIT_TIMEOUT applies
+	// and there is no GUI default.
+	Wait    time.Duration
+	WaitSet bool
+}
+
 // Edit writes initial to a 0600 file in a 0700 directory, runs editorCmd with
 // the file path appended as the last argument, and returns the file contents
 // when the editor exits 0. The temporary file is overwritten and removed on
-// every return path, including editor failure and signals.
+// every return path, including editor failure, signals, and POGO_EDIT_TIMEOUT.
 //
 // editorCmd is split on whitespace into a program and arguments. It is not
 // passed to a shell.
 func Edit(initial []byte, editorCmd string) ([]byte, error) {
-	if len(initial) > maxPlain {
+	return EditRequest(Request{Initial: initial, Command: editorCmd})
+}
+
+// EditRequest is Edit with an optional announcement line.
+func EditRequest(req Request) ([]byte, error) {
+	if len(req.Initial) > maxPlain {
 		return nil, fmt.Errorf("plaintext is larger than the %d byte limit", maxPlain)
 	}
-	fields := strings.Fields(editorCmd)
+	fields := strings.Fields(req.Command)
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("%w: editor command is empty", ErrEditorMissing)
 	}
@@ -110,7 +153,7 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := f.Write(initial); err != nil {
+	if _, err := f.Write(req.Initial); err != nil {
 		f.Close()
 		return nil, err
 	}
@@ -123,6 +166,12 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		return nil, err
+	}
+	if req.Announce != "" {
+		fmt.Fprint(os.Stderr, req.Announce)
+		if !strings.HasSuffix(req.Announce, "\n") {
+			fmt.Fprintln(os.Stderr)
+		}
 	}
 
 	cmd, foreground, parentPgrp, err := startEditor(fields, path)
@@ -141,6 +190,7 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 	}
 
 	var signaled atomic.Bool
+	var timedOut atomic.Bool
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	var once sync.Once
@@ -148,7 +198,12 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 	defer stop()
 	done := make(chan struct{})
 	abortKill := make(chan struct{})
+	timeout := req.deadline()
 	go func() {
+		var timer <-chan time.Time
+		if timeout > 0 {
+			timer = time.After(timeout)
+		}
 		select {
 		case <-sigCh:
 			// The editor is the foreground program, so a terminal Ctrl-C hits
@@ -156,12 +211,10 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 			// TERM, then KILL, because vim treats SIGINT as "cancel this command"
 			// and would otherwise keep the temp file open.
 			signaled.Store(true)
-			_ = syscall.Kill(-pgid, syscall.SIGTERM)
-			select {
-			case <-time.After(400 * time.Millisecond):
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			case <-abortKill:
-			}
+			killEditor(pgid, abortKill)
+		case <-timer:
+			timedOut.Store(true)
+			killEditor(pgid, abortKill)
 		case <-done:
 		}
 	}()
@@ -172,6 +225,18 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 
 	if signaled.Load() {
 		return nil, ErrInterrupted
+	}
+	if timedOut.Load() {
+		out, readErr := os.ReadFile(path)
+		if readErr == nil && !bytes.Equal(out, req.Initial) {
+			if len(out) > maxPlain {
+				securemem.Wipe(out)
+				return nil, fmt.Errorf("%w: the saved text is larger than the %d byte limit", ErrTimeout, maxPlain)
+			}
+			return nil, &TimeoutSavedError{Content: out, Wait: timeout}
+		}
+		securemem.Wipe(out)
+		return nil, fmt.Errorf("%w: the editor timed out after %s", ErrTimeout, FormatWait(timeout))
 	}
 	if waitErr != nil {
 		return nil, fmt.Errorf("%w: %v", ErrEditor, waitErr)
@@ -185,6 +250,67 @@ func Edit(initial []byte, editorCmd string) ([]byte, error) {
 		return nil, fmt.Errorf("edited file is larger than the %d byte limit", maxPlain)
 	}
 	return out, nil
+}
+
+func (r Request) deadline() time.Duration {
+	if r.WaitSet {
+		return r.Wait
+	}
+	return EditorWait(false)
+}
+
+// EditorWait is the editor deadline. POGO_EDIT_TIMEOUT overrides it: a number
+// of seconds, or 0 to wait until the editor exits. When that variable is unset
+// and guiNoTTY is true, the wait is DefaultNoTTYGUITimeout. Otherwise it is
+// unlimited.
+func EditorWait(guiNoTTY bool) time.Duration {
+	v := strings.TrimSpace(os.Getenv("POGO_EDIT_TIMEOUT"))
+	switch {
+	case v == "0":
+		return 0
+	case v == "":
+		if guiNoTTY {
+			return DefaultNoTTYGUITimeout
+		}
+		return 0
+	}
+	sec, err := strconv.Atoi(v)
+	if err != nil || sec < 0 {
+		fmt.Fprintf(os.Stderr, "pogo: POGO_EDIT_TIMEOUT is not a number of seconds; the editor will wait.\n")
+		return 0
+	}
+	return time.Duration(sec) * time.Second
+}
+
+// FormatWait renders a deadline the way the opened-file line prints it.
+func FormatWait(d time.Duration) string {
+	if d <= 0 {
+		return "forever"
+	}
+	if d%time.Minute == 0 {
+		n := int(d / time.Minute)
+		if n == 1 {
+			return "1 minute"
+		}
+		return fmt.Sprintf("%d minutes", n)
+	}
+	sec := int(d / time.Second)
+	if sec <= 0 {
+		sec = 1
+	}
+	if sec == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", sec)
+}
+
+func killEditor(pgid int, abortKill <-chan struct{}) {
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	select {
+	case <-time.After(400 * time.Millisecond):
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	case <-abortKill:
+	}
 }
 
 // startEditor runs the editor with the temp path as the last argument.

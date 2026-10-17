@@ -12,9 +12,45 @@ unmaintained OpenPGP packages inside `golang.org/x/crypto`. Pogo uses Argon2 and
 BLAKE2b; source and executable analysis report zero affected imports or reachable
 vulnerabilities. The module advisory has no fixed version and remains visible.
 
+## 2026-10-17 — 1.0.4 rescan
+
+Release binaries were built with Go 1.27.2 (`go version -m` on `pogo-linux-amd64`
+reports `go1.27.2`), `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and `-ldflags=-w`.
+Symbol tables are still present.
+
+`govulncheck` v1.9.0 (`./...` and `-mode=binary -show verbose` on `pogo-linux-amd64`)
+scanned the go1.27.2 standard library and the modules below. Symbol and package
+results are empty. The only module result is `GO-2026-5932`. A later rescan for the
+Mozilla fallback roots added `golang.org/x/crypto/x509roots/fallback`
+`v0.0.0-20261016151342-0ae6809b7559`. That module had no vulnerability ids.
+`GO-2026-5932` is still the only module finding and is still not reachable.
+
+| ID | Package | Version | Reachable | Resolution |
+|---|---|---|---|---|
+| GO-2026-5932 | golang.org/x/crypto | v0.58.0 | No. Pogo does not import `golang.org/x/crypto/openpgp`. Source and binary govulncheck report no affected symbols or imported packages. | No fixed version (introduced at 0, fixed in N/A). Keep Argon2id and BLAKE2b. Do not switch the module to clear an unused OpenPGP package. |
+
+OSV query of Go stdlib 1.27.2, toolchain 1.27.2, `golang.org/x/sys` v0.49.0, and
+`golang.org/x/term` v0.47.0 returned no vulnerability ids. `osv-scanner` `scan source -r .`
+reported the same `GO-2026-5932` entry from `security/pogo.cdx.json`.
+
+The same source scan also reported npm advisories in example lockfiles. Those
+packages are not linked into the `pogo` binary and were not changed for 1.0.4.
+`braces` 3.0.3 (`GHSA-vfj7-8cjw-p6xm`, `examples/node-express/package-lock.json`)
+has no fixed version in that report. The others have a fixed version upstream:
+
+- `next` 14.2.35 in `examples/nextjs/package-lock.json`: GHSA-2xp9-vwfh-vxw4, GHSA-36qx-fr4f-26g5, GHSA-3g8h-86w9-wvmq, GHSA-3x4c-7xq6-9pq8, GHSA-4633-3j49-mh5q, GHSA-4c39-4ccg-62r3, GHSA-68g3-v927-f742, GHSA-89xv-2m56-2m9x, GHSA-8h8q-6873-q5fj, GHSA-955p-x3mx-jcvp, GHSA-9g9p-9gw9-jx7f, GHSA-c4j6-fc7j-m34r, GHSA-ffhc-5mcf-pf4q, GHSA-ggv3-7p47-pfv8, GHSA-gx5p-jg67-6x7h, GHSA-h25m-26qc-wcjf, GHSA-h64f-5h5j-jqjh, GHSA-m99w-x7hq-7vfj, GHSA-p293-qw3h-jr36, GHSA-p9j2-gv94-2wf4, GHSA-q4gf-8mx6-v5v3, GHSA-vfv6-92ff-j949, GHSA-wfc6-r584-vfw7
+- `postcss` 8.4.31 in `examples/nextjs/package-lock.json`: GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, GHSA-qx2v-qp2m-jg93, GHSA-r28c-9q8g-f849
+- `cookie` 0.6.0 (dev) in `examples/sveltekit/package-lock.json` and `examples/shared-env-demo/web/package-lock.json`: GHSA-pxg6-pf52-xh8x
+
+Plan for the example lockfiles: leave them out of the 1.0.4 CLI release. They are
+demo apps, not the static binary.
+
 Resolved modules are `golang.org/x/crypto v0.58.0`, `golang.org/x/sys v0.49.0`,
-and `golang.org/x/term v0.47.0`. Dependencies require Go 1.26 or newer; the module
-selects Go 1.27.2 for patched builds.
+`golang.org/x/term v0.47.0`, and `golang.org/x/crypto/x509roots/fallback`
+`v0.0.0-20261016151342-0ae6809b7559` (embedded Mozilla roots, used only when the
+host trust store is empty). Dependencies require Go 1.26 or newer; the module
+selects Go 1.27.2 for patched builds. The committed CycloneDX file was generated
+before that fallback module was added.
 
 ## Evidence
 

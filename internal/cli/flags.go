@@ -8,7 +8,7 @@ import (
 const defaultEnc = ".env.enc"
 
 var commandNames = []string{
-	"init", "edit", "run", "encrypt", "decrypt", "convert", "rekey", "skill", "help", "version", "docker", "doctor",
+	"init", "edit", "run", "encrypt", "decrypt", "convert", "rekey", "skill", "help", "version", "upgrade", "docker", "doctor",
 }
 
 // valueFlags take an argument. Bool flags do not.
@@ -23,7 +23,8 @@ var valueFlags = map[string]bool{
 var boolFlags = map[string]bool{
 	"--key-stdin": true, "--force": true, "--no-override": true, "--list": true,
 	"--allow-short-passphrase": true,
-	"-h":                       true, "--help": true, "-V": true, "--version": true,
+	"--check":                  true, "--yes": true,
+	"-h": true, "--help": true, "-V": true, "--version": true,
 }
 
 // flags a command accepts, besides the universal help flags.
@@ -38,28 +39,32 @@ var commandFlags = map[string][]string{
 	"skill":   {"--list", "--framework"},
 	"help":    {},
 	"version": {},
+	"upgrade": {"--check", "--yes"},
 	"docker":  {},
 	"doctor":  {},
 }
 
 type options struct {
-	file        string
-	fileSet     bool
-	keyEnv      string
-	keyStdin    bool
-	allowShort  bool
-	envName     string
-	envSet      bool
-	force       bool
-	noOverride  bool
-	newKeyEnv   string
-	framework   string
-	list        bool
-	help        bool
-	version     bool
-	positionals []string
-	runCmd      []string
-	hasDD       bool
+	file         string
+	fileSet      bool
+	keyEnv       string
+	keyStdin     bool
+	allowShort   bool
+	envName      string
+	envSet       bool
+	force        bool
+	noOverride   bool
+	newKeyEnv    string
+	framework    string
+	list         bool
+	help         bool
+	version      bool
+	upgradeCheck bool
+	upgradeYes   bool
+	pinVersion   string
+	positionals  []string
+	runCmd       []string
+	hasDD        bool
 }
 
 type parsed struct {
@@ -126,6 +131,9 @@ func parseArgs(args []string) (parsed, error) {
 		return p, nil
 	}
 	if opts.version {
+		if cmd == "upgrade" {
+			return parsed{}, fmt.Errorf("-V prints the running version only as `pogo -V` or `pogo --version` with no command.\nTo install a release, use `pogo upgrade --version vX.Y.Z`.")
+		}
 		return parsed{}, fmt.Errorf("--version is not a flag for %s.\nRun `pogo version` or `pogo --version`.", cmd)
 	}
 	opts.runCmd = runCmd
@@ -237,8 +245,12 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 			return options{}, nil, false, fmt.Errorf("You passed %s more than once.\nUse it once. Run `pogo %s --help` for the flags this command accepts.", canon, orGlobal(cmd))
 		}
 		seen[canon] = true
+		takeValue := valueFlags[canon]
+		if cmd == "upgrade" && canon == "--version" {
+			takeValue = true
+		}
 		var val string
-		if valueFlags[canon] {
+		if takeValue {
 			if hasInline {
 				val = inline
 			} else {
@@ -275,9 +287,19 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 			opts.framework = val
 		case "--list":
 			opts.list = true
+		case "--check":
+			opts.upgradeCheck = true
+		case "--yes":
+			opts.upgradeYes = true
 		case "-h", "--help":
 			opts.help = true
-		case "-V", "--version":
+		case "--version":
+			if cmd == "upgrade" {
+				opts.pinVersion = val
+			} else {
+				opts.version = true
+			}
+		case "-V":
 			opts.version = true
 		}
 	}
@@ -322,6 +344,8 @@ func exampleFor(flag string) string {
 		return "--new-key-env"
 	case "--framework":
 		return "--framework"
+	case "--version":
+		return "--version v1.2.3"
 	default:
 		return flag
 	}

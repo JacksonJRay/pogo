@@ -19,6 +19,9 @@ func clearPromptEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"POGO_ASKPASS", "POGO_DEBUG", "POGO_TTY_TIMEOUT", "POGO_PROMPT_TIMEOUT",
+		"POGO_EDITOR", "POGO_EDIT_TIMEOUT", "POGO_UPGRADE_API",
+		"VSCODE_IPC_HOOK_CLI", "VSCODE_GIT_ASKPASS_NODE", "TERM_PROGRAM",
+		"EDITOR", "VISUAL",
 		"VSCODE_GIT_IPC_HANDLE", "VSCODE_GIT_IPC_AUTH_TOKEN",
 		"DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET",
 		"XDG_CURRENT_DESKTOP", "XDG_RUNTIME_DIR",
@@ -307,7 +310,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.3") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.4") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")

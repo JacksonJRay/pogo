@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -241,6 +242,58 @@ func TestEditorPayloadAndCursorHeader(t *testing.T) {
 	req, _ := cursor["request"].(string)
 	if !strings.Contains(strings.ToLower(req), "password") || !strings.Contains(req, ".env.enc") {
 		t.Fatalf("request %q", req)
+	}
+}
+
+func TestEditorNewAndConfirmHosts(t *testing.T) {
+	quietEnv(t)
+	var mu sync.Mutex
+	var hosts []string
+	var prompts []string
+	var decodeErr string
+	path := serveUnix(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Argv []string `json:"argv"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			mu.Lock()
+			decodeErr = err.Error()
+			mu.Unlock()
+		}
+		mu.Lock()
+		if len(payload.Argv) >= 5 {
+			prompts = append(prompts, payload.Argv[2])
+			hosts = append(hosts, payload.Argv[4])
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode("pogo-test-passphrase\n")
+	})
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", path)
+	got, err := AcquireConfirmed(Source{File: ".env.enc"}, "New passphrase for .env.enc: ", "Confirm new passphrase for .env.enc: ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "pogo-test-passphrase" {
+		t.Fatalf("%q", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if decodeErr != "" {
+		t.Fatal(decodeErr)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("hosts %v", hosts)
+	}
+	if hosts[0] != "https://pogo-passphrase@pogo-new-passphrase-for-.env.enc.invalid" {
+		t.Fatalf("new host %q", hosts[0])
+	}
+	if hosts[1] != "https://pogo-passphrase@pogo-confirm-passphrase-for-.env.enc.invalid" {
+		t.Fatalf("confirm host %q", hosts[1])
+	}
+	if !strings.Contains(prompts[0], "New passphrase for .env.enc:") || !strings.Contains(prompts[1], "Confirm new passphrase for .env.enc:") {
+		t.Fatalf("prompts %q", prompts)
 	}
 }
 
@@ -840,11 +893,17 @@ func TestPromptTimeoutEnv(t *testing.T) {
 	if _, ok := localXNumber("localhost:10.0"); ok {
 		t.Fatal("tcp display was treated as local")
 	}
-	if editorURL(".env.enc") != "https://pogo-passphrase@pogo-passphrase-for-.env.enc.invalid" {
-		t.Fatal(editorURL(".env.enc"))
+	if editorURL(".env.enc", KindCurrent) != "https://pogo-passphrase@pogo-passphrase-for-.env.enc.invalid" {
+		t.Fatal(editorURL(".env.enc", KindCurrent))
 	}
-	if strings.Contains(editorURL("my file"), " ") || !strings.HasSuffix(editorURL("my file"), ".invalid") {
-		t.Fatal(editorURL("my file"))
+	if editorURL(".env.enc", KindNew) != "https://pogo-passphrase@pogo-new-passphrase-for-.env.enc.invalid" {
+		t.Fatal(editorURL(".env.enc", KindNew))
+	}
+	if editorURL(".env.enc", KindConfirm) != "https://pogo-passphrase@pogo-confirm-passphrase-for-.env.enc.invalid" {
+		t.Fatal(editorURL(".env.enc", KindConfirm))
+	}
+	if strings.Contains(editorURL("my file", KindCurrent), " ") || !strings.HasSuffix(editorURL("my file", KindCurrent), ".invalid") {
+		t.Fatal(editorURL("my file", KindCurrent))
 	}
 }
 
