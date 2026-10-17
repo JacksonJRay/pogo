@@ -19,8 +19,11 @@ reports `go1.27.2`), `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and `-ldfl
 Symbol tables are still present.
 
 `govulncheck` v1.9.0 (`./...` and `-mode=binary -show verbose` on `pogo-linux-amd64`)
-scanned the go1.27.2 standard library and the three modules below. Symbol and package
-results are empty. The only module result is `GO-2026-5932`.
+scanned the go1.27.2 standard library and the modules below. Symbol and package
+results are empty. The only module result is `GO-2026-5932`. A later rescan for the
+Mozilla fallback roots added `golang.org/x/crypto/x509roots/fallback`
+`v0.0.0-20261016151342-0ae6809b7559`. That module had no vulnerability ids.
+`GO-2026-5932` is still the only module finding and is still not reachable.
 
 | ID | Package | Version | Reachable | Resolution |
 |---|---|---|---|---|
@@ -43,8 +46,11 @@ Plan for the example lockfiles: leave them out of the 1.0.4 CLI release. They ar
 demo apps, not the static binary.
 
 Resolved modules are `golang.org/x/crypto v0.58.0`, `golang.org/x/sys v0.49.0`,
-and `golang.org/x/term v0.47.0`. Dependencies require Go 1.26 or newer; the module
-selects Go 1.27.2 for patched builds.
+`golang.org/x/term v0.47.0`, and `golang.org/x/crypto/x509roots/fallback`
+`v0.0.0-20261016151342-0ae6809b7559` (embedded Mozilla roots, used only when the
+host trust store is empty). Dependencies require Go 1.26 or newer; the module
+selects Go 1.27.2 for patched builds. The committed CycloneDX file was generated
+before that fallback module was added.
 
 ## Evidence
 

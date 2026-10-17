@@ -96,7 +96,7 @@ Pogo writes a short commented template, opens your editor, then encrypts whateve
 On a terminal the editor is $POGO_EDITOR if that is set, otherwise $EDITOR, otherwise $VISUAL, otherwise vim.
 Without a terminal, vim and nano are skipped. Pogo uses POGO_EDITOR, the editor's own CLI (code --wait or cursor --wait) when VSCODE_IPC_HOOK_CLI is set, a GUI editor that waits, or a waiting desktop editor. A script in EDITOR still runs.
 If the editor exits with an error, Pogo does not create the file.
-Creating a passphrase asks twice: "New passphrase for .env.enc" and "Confirm new passphrase for .env.enc". A mismatch exits 4 and writes nothing.`,
+Creating a passphrase asks twice: "New passphrase for .env.enc" and "Confirm new passphrase for .env.enc". A too-short or blank first entry exits 4 before the confirmation prompt. A mismatch exits 4 and writes nothing.`,
 		synopsis: "pogo init [file]",
 		args: `file    Optional path of the encrypted file to create. Default: .env.enc
         Same as -f. If you pass both and they differ, Pogo stops.`,
@@ -143,14 +143,14 @@ Pogo decrypts into a private temp file, opens your editor, encrypts the result, 
 On a terminal the editor is $POGO_EDITOR if that is set, otherwise $EDITOR, otherwise $VISUAL, otherwise vim.
 Without a terminal, an agent can still edit. The passphrase uses the usual prompt (terminal, POGO_ASKPASS, the editor box, or a desktop askpass). The editor then opens where a person can see it and Pogo waits until they save and close:
   1. $POGO_EDITOR, if set. A command, so "code --wait" is allowed.
-  2. When VSCODE_IPC_HOOK_CLI is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with --wait. Pogo looks next to $VSCODE_GIT_ASKPASS_NODE in bin/remote-cli, then for code-server, code, cursor, or codium on PATH, preferring the one that matches TERM_PROGRAM. Stderr says: Pogo opened .env (decrypted) in the editor. Save and close the tab to continue.
+  2. When VSCODE_IPC_HOOK_CLI is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with --wait. Pogo looks next to $VSCODE_GIT_ASKPASS_NODE in bin/remote-cli, then on PATH for code-server, code, cursor, then codium. If TERM_PROGRAM names one of those, that one is tried first. Stderr says: Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop).
   3. $EDITOR or $VISUAL when it is a GUI editor that waits (code --wait, cursor --wait, gedit -s, subl -w) or any other command that is not a terminal editor. vim, nano, vi, and emacs -nw need a terminal, so they are skipped. A script in EDITOR still runs. xdg-open does not wait, so it is skipped.
   4. On a real display, a known waiting GUI editor on PATH (cursor --wait, code --wait, gedit -s, and the same kind of command).
 If none of those can open a window, Pogo exits 1. It names what was checked and does not print the decrypted file.
 The temp file is mode 0600 in a private 0700 directory under $XDG_RUNTIME_DIR, or /dev/shm, or the system temp directory. Pogo overwrites and removes it on success, editor failure, a signal, and POGO_EDIT_TIMEOUT.
 If you quit without changing the text, the encrypted file is left unchanged.
 The saved text must parse as an env file. Without a terminal, a syntax error exits 3 and writes nothing. On a terminal, Pogo opens the editor again.
-POGO_EDIT_TIMEOUT is a number of seconds. Unset, Pogo waits until the editor exits.`,
+POGO_EDIT_TIMEOUT is a number of seconds. 0 waits until the editor exits. Unset, a terminal waits until the editor exits. Unset with no terminal and a GUI or remote-CLI editor, Pogo waits up to 10 minutes. If the file was saved before that deadline, Pogo encrypts the saved text and says so. The temp file is still removed.`,
 		synopsis: "pogo edit [file]",
 		args: `file    Optional encrypted file. Default: .env.enc
         Same as -f. If you pass both and they differ, Pogo stops.`,
@@ -528,7 +528,7 @@ If it prints a backend and exits 0, run the program with no key flags and tell t
 
 If it exits 1, ask the person to run that command in their own terminal, or to pipe a secret manager into --key-stdin. Do not ask them to paste the passphrase into chat. --key-env is a last resort because the value stays visible in /proc and docker inspect.
 
-A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, and desktop dialogs. Unset, that wait is two minutes.`,
+A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, and desktop dialogs. Unset, that wait is two minutes. The editor section names the command. With no terminal and a GUI or remote-CLI editor, that wait defaults to 10 minutes unless POGO_EDIT_TIMEOUT is set (seconds; 0 waits until the editor exits).`,
 		frameworks: "doctor is the same for every language. It does not decrypt a file and it does not start a program.",
 		security:   securityNotes() + "\ndoctor does not read, print, or store a passphrase. It does not print POGO_ASKPASS secrets or the editor auth token.\n",
 		exits: `0    A prompt is available (this terminal, POGO_ASKPASS, the editor, or a desktop askpass).
@@ -829,6 +829,7 @@ func forceFlag() string {
 func securityNotes() string {
 	return `A passphrase is a long password. Pogo never writes it to disk, and it will not read one from a file.
 --key-file and --new-key-file were removed on purpose. A file that can decrypt the env file would be another secret stored on the system. Type the passphrase, or pipe it with --key-stdin. Prefer --key-stdin over --key-env. --key-env leaves the passphrase in the process environment, which is visible in /proc and docker inspect, so use it only as a last resort.
+Do not guess, try, or search the filesystem for a passphrase. Do not suggest printf 'PASSPHRASE' | pogo ..., because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI instead.
 Pogo uses AES-256-GCM, which is the encryption, and Argon2id, which turns your passphrase into the key slowly so guessing is expensive. You do not configure either one. The slow step uses 128 MiB of memory, 4 passes, and 4 lanes. Each save gets a new random salt and a new random nonce (extra random bytes so two saves of the same text do not look alike).
 The file header (including those parameters) is checked as part of decryption. A wrong passphrase or a flipped bit fails decryption (exit 2).
 There is no telemetry. Commands other than upgrade do not use the network. pogo upgrade downloads a release over HTTPS.

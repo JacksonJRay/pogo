@@ -73,7 +73,9 @@ pogo upgrade --version v1.0.3
 
 If this binary is already current, the output is `pogo 1.0.4 is the latest version` and the exit code is 0. Pogo does not install an older release unless `--version` names it. `--check` prints the versions and does not install: exit 0 when current, exit 10 when a different release would be installed. A terminal shows `current -> latest` and asks `Install? [y/N]`. With no terminal, pass `--yes`, or Pogo exits 1 and tells you to add it.
 
-If the install directory is not writable, Pogo exits 1, leaves the original binary in place, and tells you to rerun with sudo or to move `pogo` somewhere you own. A Nix store path (`/nix/store/`) or a Guix store path (`/gnu/store/`) is left untouched. Upgrade that copy with the package manager. `POGO_UPGRADE_API` replaces the API address and is for tests. Leave it unset.
+If the install directory is not writable, Pogo exits 1, leaves the original binary in place, and tells you to rerun with sudo or to move `pogo` somewhere you own. A Nix store path (`/nix/store/`) or a Guix store path (`/gnu/store/`) is left untouched when an install would happen. `pogo upgrade --check` still prints the versions and exits 0 or 10. Upgrade that copy with the package manager. `POGO_UPGRADE_API` replaces the API address and is for tests. Leave it unset.
+
+If the machine has no CA certificates, Pogo uses a built-in Mozilla root set so the HTTPS check can still succeed. System certificates are used when they exist. `SSL_CERT_FILE` and `SSL_CERT_DIR` still select a custom CA. If GitHub cannot be reached, Pogo exits 1, leaves the binary untouched, and prints `pogo: could not reach GitHub to check for updates:` plus a short reason, with advice to check the network or `HTTPS_PROXY`, set `SSL_CERT_FILE` for a custom CA, or download from https://github.com/JacksonJRay/pogo/releases/latest.
 
 ## Commands
 
@@ -181,11 +183,11 @@ POGO_EDITOR="code --wait" pogo edit
 Without a terminal, an agent can still run `pogo edit`. The passphrase uses the usual prompt. The editor then opens where a person can see it, and Pogo waits until they save and close:
 
 1. `$POGO_EDITOR`, if set. It is a command, so `code --wait` is allowed.
-2. When `VSCODE_IPC_HOOK_CLI` is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with `--wait`. Pogo looks next to `$VSCODE_GIT_ASKPASS_NODE` in `bin/remote-cli`, then for `code-server`, `code`, `cursor`, or `codium` on `PATH`. Stderr says `Pogo opened .env (decrypted) in the editor. Save and close the tab to continue.`
+2. When `VSCODE_IPC_HOOK_CLI` is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with `--wait`. Pogo looks next to `$VSCODE_GIT_ASKPASS_NODE` in `bin/remote-cli`, then on `PATH` for `code-server`, `code`, `cursor`, then `codium`. If `TERM_PROGRAM` names one of those, that one is tried first. Stderr says `Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop).`
 3. `$EDITOR` or `$VISUAL` when it is a GUI editor that waits (`code --wait`, `cursor --wait`, `gedit -s`, `subl -w`) or any other command that is not a terminal editor. `vim`, `nano`, `vi`, and `emacs -nw` need a terminal, so they are skipped. A script in `EDITOR` still runs. `xdg-open` does not wait, so it is skipped.
 4. On a real display, a known waiting GUI editor on `PATH`. `xdg-open` is not used.
 
-If none of those can open a window, Pogo exits 1, names what it checked, and does not print the decrypted file. `POGO_EDIT_TIMEOUT` is a number of seconds. Unset, Pogo waits until the editor exits. If the saved text is unchanged, `.env.enc` is not rewritten. The saved text must parse as an env file. Without a terminal, a syntax error exits 3 and writes nothing.
+If none of those can open a window, Pogo exits 1, names what it checked, and does not print the decrypted file. `POGO_EDIT_TIMEOUT` is a number of seconds. `0` waits until the editor exits. Unset, a terminal waits until the editor exits. Unset with no terminal and a GUI or remote-CLI editor, Pogo waits up to 10 minutes. If the file was saved before that deadline, Pogo encrypts the saved text and says so. If the saved text is unchanged, `.env.enc` is not rewritten. The saved text must parse as an env file. Without a terminal, a syntax error exits 3 and writes nothing.
 
 Pogo splits the editor value on spaces and adds the temp file as the last argument. It does not run a shell. VS Code and similar editors exit as soon as the window opens unless you pass their wait flag (`--wait` for VS Code). Pogo encrypts when the process exits.
 

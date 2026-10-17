@@ -9,8 +9,11 @@ func TestAgentRules(t *testing.T) {
 	text := string(Document)
 	for _, phrase := range []string{
 		"Prefer `--key-stdin` over `--key-env`",
-		"printf '%s' \"$PASS\" | pogo run --key-stdin -- cmd",
-		"op read ... | pogo",
+		"op read ... | pogo run --key-stdin -- cmd",
+		"pass show",
+		"Do not guess, try, or search the filesystem for a passphrase",
+		"printf 'PASSPHRASE' | pogo",
+		"pogo waits up to 10 minutes",
 		"visible in `/proc` and `docker inspect`",
 		"only as a last resort",
 		"`bash -lc` can reset `PATH`",

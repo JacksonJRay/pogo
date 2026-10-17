@@ -315,3 +315,68 @@ func TestXDGRuntimeDirPreferred(t *testing.T) {
 		t.Fatalf("temp file remains after success: %v", err)
 	}
 }
+
+func TestPreferredCLIOrderIgnoresHookPath(t *testing.T) {
+	quietEditorEnv(t)
+	t.Setenv("VSCODE_IPC_HOOK_CLI", "/opt/cursor/resources/app/hook")
+	t.Setenv("TERM_PROGRAM", "")
+	got := strings.Join(preferredCLINames(), ",")
+	if got != "code-server,code,cursor,codium" {
+		t.Fatalf("%s", got)
+	}
+	t.Setenv("TERM_PROGRAM", "cursor")
+	got = strings.Join(preferredCLINames(), ",")
+	if got != "cursor,code-server,code,codium" {
+		t.Fatalf("term %s", got)
+	}
+}
+
+func TestRemoteCLIPrefersCodeServerWithoutTermProgram(t *testing.T) {
+	quietEditorEnv(t)
+	dir := t.TempDir()
+	writeScript(t, dir, "cursor", "#!/bin/sh\nexit 0\n")
+	writeScript(t, dir, "code-server", "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", dir)
+	t.Setenv("VSCODE_IPC_HOOK_CLI", filepath.Join(dir, "cursor-hook"))
+	choice, err := SelectTTY(false)
+	if err != nil || filepath.Base(choice.Argv[0]) != "code-server" || !choice.Announce {
+		t.Fatalf("%v %+v", err, choice)
+	}
+}
+
+func TestEditTimeoutKeepsSavedText(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("POGO_EDIT_TIMEOUT", "1")
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "where")
+	script := writeScript(t, dir, "sleep-edit", "#!/bin/sh\nprintf '%s\\n' \"$1\" > "+shellQuote(marker)+"\nprintf '\\nB=2\\n' >> \"$1\"\nsleep 30\n")
+	out, err := Edit([]byte("A=1\n"), script)
+	var saved *TimeoutSavedError
+	if !errors.As(err, &saved) {
+		t.Fatalf("%v %q", err, out)
+	}
+	if string(saved.Content) != "A=1\n\nB=2\n" || saved.Wait != time.Second {
+		t.Fatalf("%q %s", saved.Content, saved.Wait)
+	}
+	where, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(strings.TrimSpace(string(where))); !os.IsNotExist(err) {
+		t.Fatalf("temp remains: %v", err)
+	}
+}
+
+func TestEditorWaitDefaultsToTenMinutes(t *testing.T) {
+	t.Setenv("POGO_EDIT_TIMEOUT", "")
+	if EditorWait(true) != DefaultNoTTYGUITimeout || FormatWait(DefaultNoTTYGUITimeout) != "10 minutes" {
+		t.Fatalf("%s", EditorWait(true))
+	}
+	if EditorWait(false) != 0 {
+		t.Fatal("terminal wait should stay unlimited")
+	}
+	t.Setenv("POGO_EDIT_TIMEOUT", "0")
+	if EditorWait(true) != 0 {
+		t.Fatal("0 should wait forever")
+	}
+}

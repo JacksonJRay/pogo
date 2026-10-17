@@ -45,6 +45,8 @@ func writeAskpass(t *testing.T, dir, log, kind string) string {
 		body += "exit 1\n"
 	case "cancel2":
 		body += "if [ \"$n\" -eq 1 ]; then printf '%s\\n' 'pogo-test-passphrase'; else exit 1; fi\n"
+	case "short":
+		body += "printf '%s\\n' 'short'\n"
 	case "sequence":
 		body += "case \"$n\" in\n1) printf '%s\\n' 'pogo-test-passphrase' ;;\n2) printf '%s\\n' 'pogo-test-passphrase-v2' ;;\n*) printf '%s\\n' 'pogo-test-passphrase-nope' ;;\nesac\n"
 	default:
@@ -140,6 +142,61 @@ func TestCreatePromptsAskpass(t *testing.T) {
 				t.Fatal("encrypted file was written")
 			}
 		})
+	}
+}
+
+func TestShortPassphraseStopsBeforeConfirm(t *testing.T) {
+	dir := promptSetup(t)
+	log := filepath.Join(dir, "log")
+	t.Setenv("POGO_ASKPASS", writeAskpass(t, dir, log, "short"))
+	enc := filepath.Join(dir, "e.enc")
+	code, _, stderr := runCLI(t, "init", "-f", enc)
+	if code != 4 || !strings.Contains(stderr, "too short") {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	text := readLog(t, log)
+	if !strings.Contains(text, "New passphrase for e.enc:") || strings.Contains(text, "Confirm") {
+		t.Fatalf("prompts %q", text)
+	}
+	if _, err := os.Stat(enc); !os.IsNotExist(err) {
+		t.Fatal("encrypted file was written")
+	}
+}
+
+func TestTimeoutKeepsSavedEdit(t *testing.T) {
+	closedStdin(t)
+	t.Setenv("POGO_EDIT_TIMEOUT", "1")
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "where")
+	script := filepath.Join(dir, "ed.sh")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$1\" > " + shQuote(marker) + "\nprintf '\\nB=2\\n' >> \"$1\"\nsleep 30\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, done := capture(t)
+	edited, code, err := editUntilValid([]byte("A=1\n"), editfile.Choice{Argv: []string{script}, Announce: true}, "e.enc", true)
+	done()
+	if err != nil || code != 0 || string(edited) != "A=1\n\nB=2\n" {
+		t.Fatalf("%d %v %q\n%s", code, err, edited, errOut.String())
+	}
+	text := errOut.String()
+	for _, part := range []string{"Pogo opened e.enc (decrypted)", "pogo waits up to 1 second; Ctrl+C to stop", "saved text was kept"} {
+		if !strings.Contains(text, part) {
+			t.Fatalf("missing %q\n%s", part, text)
+		}
+	}
+	where, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(strings.TrimSpace(string(where))); !os.IsNotExist(err) {
+		t.Fatalf("temp remains: %v", err)
+	}
+}
+
+func TestPlainLabelKeepsEncName(t *testing.T) {
+	if plainLabel("e.enc") != "e.enc" || plainLabel("/tmp/.env.enc") != ".env.enc" || plainLabel(".enc") != ".enc" {
+		t.Fatalf("%q %q %q", plainLabel("e.enc"), plainLabel("/tmp/.env.enc"), plainLabel(".enc"))
 	}
 }
 
@@ -330,7 +387,7 @@ func TestEditAnnounceAndValidation(t *testing.T) {
 	if err != nil || string(out) != "A=1\n" {
 		t.Fatalf("%v %q", err, out)
 	}
-	want := "Pogo opened .env (decrypted) in the editor. Save and close the tab to continue.\n"
+	want := "Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop).\n"
 	if errOut.String() != want {
 		t.Fatalf("announce %q", errOut.String())
 	}
@@ -406,7 +463,7 @@ func TestEditRoundTripNoTTY(t *testing.T) {
 	t.Setenv("VSCODE_IPC_HOOK_CLI", filepath.Join(dir, "hook"))
 	t.Setenv("TERM_PROGRAM", "cursor")
 	code, _, stderr = runCLI(t, "edit", "-f", enc)
-	want := "Pogo opened .env (decrypted) in the editor. Save and close the tab to continue."
+	want := "Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop)."
 	if code != 0 || !strings.Contains(stderr, want) || !strings.Contains(stderr, "Updated") {
 		t.Fatalf("remote %d %s", code, stderr)
 	}

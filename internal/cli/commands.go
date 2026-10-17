@@ -430,6 +430,9 @@ func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt, en
 		Prompt: prompt,
 		File:   filepath.Base(encPath),
 	}
+	if confirm && src.Env == "" && !src.Stdin {
+		return acquireConfirmed(opts, src, prompt, confirmPrompt)
+	}
 	var (
 		pass []byte
 		err  error
@@ -449,6 +452,37 @@ func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt, en
 		return checkOpenPassphrase(pass)
 	}
 	return checkCreatePassphrase(opts, pass)
+}
+
+// acquireConfirmed checks the first entry before asking for the second.
+// A too-short or blank passphrase exits before the confirmation prompt.
+func acquireConfirmed(opts options, src passphrase.Source, prompt, confirmPrompt string) ([]byte, int, error) {
+	first := src
+	first.Kind = passphrase.KindNew
+	first.Prompt = prompt
+	pass, err := passphrase.Acquire(first)
+	if err != nil {
+		return nil, 1, explainPassphrase(err)
+	}
+	pass, code, err := checkCreatePassphrase(opts, pass)
+	if err != nil {
+		return nil, code, err
+	}
+	second := src
+	second.Kind = passphrase.KindConfirm
+	second.Prompt = confirmPrompt
+	again, err := passphrase.Acquire(second)
+	if err != nil {
+		securemem.Wipe(pass)
+		return nil, 1, explainPassphrase(err)
+	}
+	if !passphrase.Match(pass, again) {
+		securemem.Wipe(pass)
+		securemem.Wipe(again)
+		return nil, 4, fmt.Errorf("The two passphrases did not match.\nNothing was written. Run the command again and enter the same passphrase both times.")
+	}
+	securemem.Wipe(again)
+	return pass, 0, nil
 }
 
 func explainPassphrase(err error) error {
@@ -537,12 +571,6 @@ func confirmNewPrompt(encPath string) string {
 
 func plainLabel(encPath string) string {
 	name := promptFile(encPath)
-	if strings.HasSuffix(name, ".enc") {
-		trimmed := strings.TrimSuffix(name, ".enc")
-		if trimmed != "" && trimmed != "." {
-			return trimmed
-		}
-	}
 	if name == "the file" {
 		return ".env"
 	}
@@ -550,13 +578,24 @@ func plainLabel(encPath string) string {
 }
 
 func openInEditor(initial []byte, choice editfile.Choice, enc string, decrypted bool) ([]byte, error) {
-	req := editfile.Request{Initial: initial, Command: choice.CommandLine()}
+	gui := choice.Announce && !term.IsTerminal(int(os.Stdin.Fd()))
+	wait := editfile.EditorWait(gui)
+	req := editfile.Request{
+		Initial: initial,
+		Command: choice.CommandLine(),
+		Wait:    wait,
+		WaitSet: true,
+	}
 	if choice.Announce {
 		kind := "new file"
 		if decrypted {
 			kind = "decrypted"
 		}
-		req.Announce = fmt.Sprintf("Pogo opened %s (%s) in the editor. Save and close the tab to continue.\n", plainLabel(enc), kind)
+		line := fmt.Sprintf("Pogo opened %s (%s) in the editor. Save and close the tab to continue", plainLabel(enc), kind)
+		if wait > 0 {
+			line += fmt.Sprintf(" (pogo waits up to %s; Ctrl+C to stop)", editfile.FormatWait(wait))
+		}
+		req.Announce = line + ".\n"
 	}
 	return editfile.EditRequest(req)
 }
@@ -568,6 +607,10 @@ func editUntilValid(original []byte, choice editfile.Choice, enc string, updatin
 	current := append([]byte(nil), original...)
 	for {
 		edited, err := openInEditor(current, choice, enc, updating)
+		var saved *editfile.TimeoutSavedError
+		if errors.As(err, &saved) {
+			return finishTimedOutSave(original, current, saved, updating)
+		}
 		if err != nil {
 			securemem.Wipe(current)
 			code, explained := explainEditor(err, updating)
@@ -591,6 +634,25 @@ func editUntilValid(original []byte, choice editfile.Choice, enc string, updatin
 		securemem.Wipe(current)
 		return edited, 0, nil
 	}
+}
+
+func finishTimedOutSave(original, current []byte, saved *editfile.TimeoutSavedError, updating bool) ([]byte, int, error) {
+	defer securemem.Wipe(current)
+	edited := saved.Content
+	if bytes.Equal(original, edited) {
+		securemem.Wipe(edited)
+		if updating {
+			fmt.Fprintf(os.Stderr, "The editor timed out. No changes were saved.\n")
+			return append([]byte(nil), original...), 0, nil
+		}
+		return nil, 1, fmt.Errorf("pogo: the editor got no answer within %s.\nNothing was written. The temporary file was removed.", editfile.FormatWait(saved.Wait))
+	}
+	if _, err := dotenv.Parse(edited); err != nil {
+		securemem.Wipe(edited)
+		return nil, 3, fmt.Errorf("The editor timed out and the saved text is not valid env syntax: %s.\nNothing was written. The temporary file was removed.", err.Error())
+	}
+	fmt.Fprintf(os.Stderr, "The editor timed out after %s, but the saved text was kept and will be encrypted.\n", editfile.FormatWait(saved.Wait))
+	return edited, 0, nil
 }
 
 func warnShort(opts options) {

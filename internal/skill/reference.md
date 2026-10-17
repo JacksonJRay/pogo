@@ -68,7 +68,7 @@ Use one method only. If you pass more than one of `--key-env` and `--key-stdin`,
 | `--key-stdin` and stdin is a terminal | Prompt, echo off, one line | Same as the interactive prompt. The program keeps the terminal. You do not press Ctrl-D |
 | A process already has the variable | `--key-env POGO_KEY` | Last resort. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. Pogo removes it from the child |
 | An agent, stdin is not a terminal | `pogo doctor`, then `pogo run -- <command>` with no key flags | Doctor exits 0 when a prompt already on the machine can ask. Tell the person to watch for it. Do not collect the passphrase in chat |
-| Doctor exits 1, or no prompt | A terminal, or `--key-stdin` from a secret manager | The error starts with `pogo: no way to ask for the passphrase here`. Ask the person to run the command in their own terminal. `--key-env` is a last resort |
+| Doctor exits 1, or no prompt | A terminal, or `--key-stdin` from a secret manager | The error starts with `pogo: no way to ask for the passphrase here`. Ask the person to run the command in their own terminal. Do not guess, try, or search the filesystem for a passphrase. Do not suggest printf 'PASSPHRASE' piped into pogo, because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI (`op read`, `pass show`). `--key-env` is a last resort |
 | Editor box in Cursor | The passphrase for the file in the title | The box may say "Sign in" and "Password or personal access token". Opening a file uses `pogo-passphrase-for-<file>.invalid`. A new passphrase uses `pogo-new-passphrase-for-<file>.invalid`. Confirmation uses `pogo-confirm-passphrase-for-<file>.invalid`. Do not enter a Git password or a token |
 | An agent editing the env file | `pogo edit` with no key flags | Tell the person a tab will open, and wait. Do not ask them to paste values into chat |
 | No editor can open | Exit 1 | Ask the person to run `pogo edit` in their own terminal, or from the integrated terminal. Set `POGO_EDITOR` to a command that waits, such as `code --wait` |
@@ -174,7 +174,7 @@ Which program opens on a terminal:
 3. Otherwise `$VISUAL`.
 4. Otherwise `vim`.
 
-Without a terminal, terminal editors are skipped. Pogo uses `$POGO_EDITOR`, then the editor CLI with `--wait` when `VSCODE_IPC_HOOK_CLI` is set, then a waiting GUI editor, then a script left in `$EDITOR`. `xdg-open` is not used. If nothing can open a window, Pogo exits 1 and does not print the decrypted file. `POGO_EDIT_TIMEOUT` is an optional number of seconds. Unset, Pogo waits until the editor exits.
+Without a terminal, terminal editors are skipped. Pogo uses `$POGO_EDITOR`, then the editor CLI with `--wait` when `VSCODE_IPC_HOOK_CLI` is set, then a waiting GUI editor, then a script left in `$EDITOR`. The remote CLI order is the bundled CLI next to `$VSCODE_GIT_ASKPASS_NODE`, then `code-server`, `code`, `cursor`, `codium`. If `TERM_PROGRAM` names one of those, that one is first. `xdg-open` is not used. If nothing can open a window, Pogo exits 1 and does not print the decrypted file. Stderr says `Pogo opened .env.enc (decrypted) in the editor. Save and close the tab to continue (pogo waits up to 10 minutes; Ctrl+C to stop).` `POGO_EDIT_TIMEOUT` is a number of seconds. `0` waits until the editor exits. Unset, a terminal waits until the editor exits. Unset with no terminal and a GUI or remote-CLI editor, Pogo waits up to 10 minutes. If the file was saved before that deadline, Pogo encrypts the saved text.
 
 ```bash
 pogo edit

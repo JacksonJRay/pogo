@@ -109,7 +109,7 @@ func TestDoctorAskpassExitZero(t *testing.T) {
 	}
 	t.Setenv("POGO_EDITOR", "code --wait")
 	code, stdout, stderr = runCLI(t, "doctor")
-	if code != 0 || !strings.Contains(stdout, "editor: code --wait") || !strings.Contains(stdout, "Source: POGO_EDITOR") {
+	if code != 0 || !strings.Contains(stdout, "editor: code --wait") || !strings.Contains(stdout, "Source: POGO_EDITOR") || !strings.Contains(stdout, "10 minutes") {
 		t.Fatalf("editor report %d\n%s\n%s", code, stdout, stderr)
 	}
 	code, _, stderr = runCLI(t, "doctor", "extra")

@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -224,9 +225,6 @@ func Run(opts Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	if tool, ok := managedBy(dest); ok {
-		return 1, fmt.Errorf("pogo: this binary is in the %s store (%s).\nUpgrade pogo with %s. pogo upgrade will not change that path.", tool, dest, tool)
-	}
 
 	base, err := apiBase()
 	if err != nil {
@@ -282,6 +280,9 @@ func Run(opts Options) (int, error) {
 			fmt.Fprintf(os.Stdout, "current %s\nlatest %s\n", cur.String(), target.String())
 		}
 		return ExitUpgradeAvailable, nil
+	}
+	if tool, ok := managedBy(dest); ok {
+		return 1, fmt.Errorf("pogo: this binary is in the %s store (%s).\nUpgrade pogo with %s. pogo upgrade will not change that path.", tool, dest, tool)
 	}
 	if !opts.Yes && !stdinIsTerm() {
 		return 1, fmt.Errorf("pogo: no terminal, so %s was not installed.\nRun `pogo upgrade --yes` to install it, or `pogo upgrade --check` to compare versions.", target.String())
@@ -440,7 +441,7 @@ func fetchBytes(ctx context.Context, client *http.Client, rawURL string, limit i
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, reachErr(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -457,7 +458,7 @@ func fetchBytes(ctx context.Context, client *http.Client, rawURL string, limit i
 	}
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, reachErr(err)
 	}
 	if int64(len(buf)) > limit {
 		return nil, fmt.Errorf("response is larger than the %d byte limit", limit)
@@ -505,12 +506,15 @@ func hashFor(sums []byte, name string) ([]byte, error) {
 	return found, nil
 }
 
+// evalSymlinks resolves the running binary. Tests can replace it.
+var evalSymlinks = filepath.EvalSymlinks
+
 func resolveExecutable() (string, error) {
 	p, err := executablePath()
 	if err != nil {
 		return "", fmt.Errorf("pogo: could not find the running binary: %s", err.Error())
 	}
-	resolved, err := filepath.EvalSymlinks(p)
+	resolved, err := evalSymlinks(p)
 	if err != nil {
 		return "", fmt.Errorf("pogo: could not resolve the running binary %s: %s", p, err.Error())
 	}
@@ -581,6 +585,38 @@ func install(dest string, blob []byte, version string) error {
 		d.Close()
 	}
 	return nil
+}
+
+func reachErr(err error) error {
+	if err == nil || strings.Contains(err.Error(), "pogo:") {
+		return err
+	}
+	return fmt.Errorf("pogo: could not reach GitHub to check for updates: %s\nCheck the network or proxy (HTTPS_PROXY). For a custom CA, set SSL_CERT_FILE. Or download the binary from https://github.com/JacksonJRay/pogo/releases/latest", shortReach(err))
+}
+
+func shortReach(err error) string {
+	var unk x509.UnknownAuthorityError
+	if errors.As(err, &unk) || strings.Contains(err.Error(), "unknown authority") {
+		return "certificate signed by unknown authority"
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return "timed out"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "connection refused"):
+		return "connection refused"
+	case strings.Contains(msg, "no such host"):
+		return "no such host"
+	}
+	if i := strings.IndexByte(msg, '\n'); i >= 0 {
+		msg = msg[:i]
+	}
+	if len(msg) > 160 {
+		msg = msg[:160]
+	}
+	return msg
 }
 
 func installErr(dest string, err error) error {

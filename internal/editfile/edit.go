@@ -3,6 +3,7 @@
 package editfile
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,10 @@ import (
 
 const maxPlain = 32 << 20
 
+// DefaultNoTTYGUITimeout is how long pogo edit and pogo init wait for a GUI
+// or remote-CLI editor when stdin is not a terminal and POGO_EDIT_TIMEOUT is unset.
+const DefaultNoTTYGUITimeout = 10 * time.Minute
+
 var (
 	// ErrEditor means the editor process ran and exited non-zero.
 	ErrEditor = errors.New("editor exited non-zero")
@@ -31,9 +36,21 @@ var (
 	ErrEditorMissing = errors.New("editor not found")
 	// ErrInterrupted means Pogo received a signal and aborted the edit.
 	ErrInterrupted = errors.New("interrupted")
-	// ErrTimeout means POGO_EDIT_TIMEOUT elapsed before the editor exited.
+	// ErrTimeout means the editor wait elapsed before the process exited
+	// and the temp file was unchanged.
 	ErrTimeout = errors.New("editor timed out")
 )
+
+// TimeoutSavedError means the editor wait elapsed after the temp file changed.
+// Content is the saved plaintext. The caller re-encrypts it.
+type TimeoutSavedError struct {
+	Content []byte
+	Wait    time.Duration
+}
+
+func (e *TimeoutSavedError) Error() string {
+	return "editor timed out after the file was saved"
+}
 
 // EditorCommand returns the editor a person asked for.
 // $EDITOR wins. If it is unset or blank, $VISUAL is used. If both are unset, vim.
@@ -90,6 +107,11 @@ type Request struct {
 	// Announce, when set, is written to stderr after the temp file exists
 	// and before the editor starts.
 	Announce string
+	// Wait is the editor deadline when WaitSet is true. Zero waits until
+	// the editor exits. When WaitSet is false, POGO_EDIT_TIMEOUT applies
+	// and there is no GUI default.
+	Wait    time.Duration
+	WaitSet bool
 }
 
 // Edit writes initial to a 0600 file in a 0700 directory, runs editorCmd with
@@ -176,7 +198,7 @@ func EditRequest(req Request) ([]byte, error) {
 	defer stop()
 	done := make(chan struct{})
 	abortKill := make(chan struct{})
-	timeout := editTimeout()
+	timeout := req.deadline()
 	go func() {
 		var timer <-chan time.Time
 		if timeout > 0 {
@@ -205,7 +227,16 @@ func EditRequest(req Request) ([]byte, error) {
 		return nil, ErrInterrupted
 	}
 	if timedOut.Load() {
-		return nil, fmt.Errorf("%w: POGO_EDIT_TIMEOUT is %s", ErrTimeout, timeout)
+		out, readErr := os.ReadFile(path)
+		if readErr == nil && !bytes.Equal(out, req.Initial) {
+			if len(out) > maxPlain {
+				securemem.Wipe(out)
+				return nil, fmt.Errorf("%w: the saved text is larger than the %d byte limit", ErrTimeout, maxPlain)
+			}
+			return nil, &TimeoutSavedError{Content: out, Wait: timeout}
+		}
+		securemem.Wipe(out)
+		return nil, fmt.Errorf("%w: the editor timed out after %s", ErrTimeout, FormatWait(timeout))
 	}
 	if waitErr != nil {
 		return nil, fmt.Errorf("%w: %v", ErrEditor, waitErr)
@@ -221,17 +252,56 @@ func EditRequest(req Request) ([]byte, error) {
 	return out, nil
 }
 
-func editTimeout() time.Duration {
+func (r Request) deadline() time.Duration {
+	if r.WaitSet {
+		return r.Wait
+	}
+	return EditorWait(false)
+}
+
+// EditorWait is the editor deadline. POGO_EDIT_TIMEOUT overrides it: a number
+// of seconds, or 0 to wait until the editor exits. When that variable is unset
+// and guiNoTTY is true, the wait is DefaultNoTTYGUITimeout. Otherwise it is
+// unlimited.
+func EditorWait(guiNoTTY bool) time.Duration {
 	v := strings.TrimSpace(os.Getenv("POGO_EDIT_TIMEOUT"))
-	if v == "" {
+	switch {
+	case v == "0":
+		return 0
+	case v == "":
+		if guiNoTTY {
+			return DefaultNoTTYGUITimeout
+		}
 		return 0
 	}
 	sec, err := strconv.Atoi(v)
-	if err != nil || sec <= 0 {
-		fmt.Fprintf(os.Stderr, "pogo: POGO_EDIT_TIMEOUT is not a positive number of seconds; the editor will wait.\n")
+	if err != nil || sec < 0 {
+		fmt.Fprintf(os.Stderr, "pogo: POGO_EDIT_TIMEOUT is not a number of seconds; the editor will wait.\n")
 		return 0
 	}
 	return time.Duration(sec) * time.Second
+}
+
+// FormatWait renders a deadline the way the opened-file line prints it.
+func FormatWait(d time.Duration) string {
+	if d <= 0 {
+		return "forever"
+	}
+	if d%time.Minute == 0 {
+		n := int(d / time.Minute)
+		if n == 1 {
+			return "1 minute"
+		}
+		return fmt.Sprintf("%d minutes", n)
+	}
+	sec := int(d / time.Second)
+	if sec <= 0 {
+		sec = 1
+	}
+	if sec == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", sec)
 }
 
 func killEditor(pgid int, abortKill <-chan struct{}) {

@@ -36,8 +36,11 @@ type NoPromptError struct {
 // so a person or an agent can grep for it.
 const NoPromptSummary = "pogo: no way to ask for the passphrase here"
 
+// AgentRestraint tells an agent not to hunt for a passphrase or put one in a shell command.
+const AgentRestraint = "Do not guess, try, or search the filesystem for a passphrase. Do not suggest printf 'PASSPHRASE' | pogo ..., because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI instead."
+
 // AgentLine tells an agent not to collect the passphrase in chat.
-const AgentLine = "If you are an AI agent: do not ask the person to paste the passphrase into chat; ask them to run this command in their own terminal."
+const AgentLine = "If you are an AI agent: do not ask the person to paste the passphrase into chat; ask them to run this command in their own terminal. " + AgentRestraint
 
 func (e *NoPromptError) Error() string {
 	if e == nil {

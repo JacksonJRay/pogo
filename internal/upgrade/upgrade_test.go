@@ -259,6 +259,64 @@ func TestUpgradeFlows(t *testing.T) {
 			t.Fatalf("changed %q %v", got, err)
 		}
 	})
+
+	t.Run("check on nix store", func(t *testing.T) {
+		oldEval := evalSymlinks
+		t.Cleanup(func() { evalSymlinks = oldEval })
+		evalSymlinks = func(p string) (string, error) { return p, nil }
+		executablePath = func() (string, error) { return "/nix/store/abc/bin/pogo", nil }
+		srv.reset(t, "v1.2.3", nil)
+		code, stdout, stderr := runUpgrade(t, Options{Current: "1.0.4", Check: true})
+		if code != ExitUpgradeAvailable || stdout != "current 1.0.4\nlatest 1.2.3\n" || strings.Contains(stderr, "Nix") {
+			t.Fatalf("%d\n%s\n%s", code, stdout, stderr)
+		}
+		code, stdout, _ = runUpgrade(t, Options{Current: "1.2.3", Check: true})
+		if code != 0 || stdout != "pogo 1.2.3 is the latest version\n" {
+			t.Fatalf("current %d %q", code, stdout)
+		}
+		before := srv.downloads
+		code, _, stderr = runUpgrade(t, Options{Current: "1.0.0", Yes: true})
+		if code != 1 || !strings.Contains(stderr, "Nix") || !strings.Contains(stderr, "/nix/store/abc/bin/pogo") {
+			t.Fatalf("install %d %s", code, stderr)
+		}
+		if srv.downloads != before {
+			t.Fatal("nix install downloaded an asset")
+		}
+	})
+}
+
+func TestUpgradeWrapsTLSFailure(t *testing.T) {
+	oldHook := executablePath
+	t.Cleanup(func() { executablePath = oldHook })
+	bin := filepath.Join(t.TempDir(), "pogo")
+	if err := os.WriteFile(bin, []byte("untouched"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executablePath = func() (string, error) { return bin, nil }
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(apiEnv, srv.URL)
+	code, err := Run(Options{Current: "1.0.4", Check: true})
+	if code != 1 || err == nil {
+		t.Fatalf("%d %v", code, err)
+	}
+	msg := err.Error()
+	for _, part := range []string{
+		"pogo: could not reach GitHub to check for updates: certificate signed by unknown authority",
+		"HTTPS_PROXY",
+		"SSL_CERT_FILE",
+		"https://github.com/JacksonJRay/pogo/releases/latest",
+	} {
+		if !strings.Contains(msg, part) {
+			t.Fatalf("missing %q\n%s", part, msg)
+		}
+	}
+	got, err := os.ReadFile(bin)
+	if err != nil || string(got) != "untouched" {
+		t.Fatalf("binary %q %v", got, err)
+	}
 }
 
 func TestUpgradeDecline(t *testing.T) {

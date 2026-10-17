@@ -30,7 +30,7 @@ type NoEditorError struct {
 const NoEditorSummary = "pogo: no editor can open the file here"
 
 // AgentEditLine tells an agent not to collect plaintext in chat.
-const AgentEditLine = "If you are an AI agent: do not ask the person to paste values into chat; ask them to run pogo edit themselves."
+const AgentEditLine = "If you are an AI agent: do not ask the person to paste values into chat; ask them to run pogo edit themselves. " + passphrase.AgentRestraint
 
 func (e *NoEditorError) Error() string {
 	var b strings.Builder
@@ -81,7 +81,7 @@ func SelectTTY(tty bool) (Choice, error) {
 		if strings.TrimSpace(os.Getenv("VSCODE_IPC_HOOK_CLI")) == "" {
 			note("VSCODE_IPC_HOOK_CLI not set")
 		} else {
-			note("VSCODE_IPC_HOOK_CLI is set, but no code, cursor, code-server, or codium CLI was found")
+			note("VSCODE_IPC_HOOK_CLI is set, but no code-server, code, cursor, or codium CLI was found")
 		}
 	}
 
@@ -122,6 +122,11 @@ func EditorReport() string {
 			return ne.Error() + "\n"
 		}
 		return "editor: none\n" + err.Error() + "\n"
+	}
+	gui := choice.Announce && !term.IsTerminal(int(os.Stdin.Fd()))
+	wait := EditorWait(gui)
+	if wait > 0 {
+		return fmt.Sprintf("editor: %s\nPogo will run this for pogo edit and pogo init and wait up to %s (Ctrl+C to stop). Source: %s.\n", strings.Join(choice.Argv, " "), FormatWait(wait), choice.Source)
 	}
 	return fmt.Sprintf("editor: %s\nPogo will run this for pogo edit and pogo init and wait until it exits. Source: %s.\n", strings.Join(choice.Argv, " "), choice.Source)
 }
@@ -170,19 +175,22 @@ func remoteCLI() (Choice, bool) {
 }
 
 func preferredCLINames() []string {
-	blob := strings.ToLower(os.Getenv("TERM_PROGRAM") + " " + os.Getenv("VSCODE_IPC_HOOK_CLI"))
+	// TERM_PROGRAM names the product. The IPC hook path is not a preference:
+	// a Cursor hook with no matching TERM_PROGRAM still searches
+	// code-server, code, cursor, codium.
+	prog := strings.ToLower(strings.TrimSpace(os.Getenv("TERM_PROGRAM")))
 	var first []string
-	switch {
-	case strings.Contains(blob, "cursor"):
+	switch prog {
+	case "cursor":
 		first = []string{"cursor"}
-	case strings.Contains(blob, "codium"):
+	case "codium", "vscodium":
 		first = []string{"codium"}
-	case strings.Contains(blob, "code-server"):
+	case "code-server":
 		first = []string{"code-server", "code"}
-	case strings.Contains(blob, "vscode"):
+	case "vscode", "code":
 		first = []string{"code", "code-server"}
 	}
-	rest := []string{"cursor", "code", "code-server", "codium"}
+	rest := []string{"code-server", "code", "cursor", "codium"}
 	seen := map[string]bool{}
 	var out []string
 	for _, n := range append(first, rest...) {
