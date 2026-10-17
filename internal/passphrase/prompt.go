@@ -192,7 +192,7 @@ func SetAskpassDirsForTest(dirs []string) func() {
 	}
 }
 
-func promptOutOfBand(prompt, file string) ([]byte, error) {
+func promptOutOfBand(prompt, file string, kind PromptKind) ([]byte, error) {
 	debug("stdin is not a terminal")
 	text := withFile(prompt, file)
 	var checks []string
@@ -223,7 +223,7 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 	if sock, skip := resolveEditorSocket(); sock == "" {
 		note(skip)
 	} else {
-		pass, err := askEditor(sock, text, file)
+		pass, err := askEditor(sock, text, file, kind)
 		if finishedPrompt(err) {
 			return pass, err
 		}
@@ -280,6 +280,12 @@ func SetX11DirForTest(dir string) func() {
 	old := x11SocketDir
 	x11SocketDir = dir
 	return func() { x11SocketDir = old }
+}
+
+// DisplayReady reports whether a desktop window can be opened.
+// The string is the reason when it cannot, the same text doctor prints.
+func DisplayReady() (bool, string) {
+	return displayDecision()
 }
 
 // displayDecision reports whether a desktop askpass should be tried.

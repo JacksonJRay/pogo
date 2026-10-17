@@ -55,13 +55,30 @@ var (
 // Prompt, reads until EOF, and trims the ends.
 //
 // File is the encrypted file name included in an out-of-band prompt. The
-// terminal prompt is unchanged.
+// terminal prompt is the Prompt string itself.
+//
+// Kind selects the editor box title. Cursor shows that host and not the
+// prompt text. KindCurrent, KindNew, and KindConfirm are distinct hosts.
 type Source struct {
 	Env    string
 	Stdin  bool
 	Prompt string
 	File   string
+	Kind   PromptKind
 }
+
+// PromptKind is which passphrase is being asked for.
+// Cursor titles its box from the host, so each kind has its own .invalid name.
+type PromptKind int
+
+const (
+	// KindCurrent opens an existing file, including rekey's current passphrase.
+	KindCurrent PromptKind = iota
+	// KindNew is the first entry when a passphrase is created.
+	KindNew
+	// KindConfirm is the second entry when a passphrase is created.
+	KindConfirm
+)
 
 // CheckLength reports ErrTooShort or ErrTooLong.
 // Length is counted in Unicode characters, not bytes.
@@ -101,12 +118,13 @@ func Acquire(src Source) ([]byte, error) {
 		if prompt == "" {
 			prompt = "Enter passphrase (min 15 characters): "
 		}
-		return readFromUser(prompt, src.File)
+		return readFromUser(prompt, src.File, src.Kind)
 	}
 }
 
-// AcquireConfirmed reads a passphrase. Interactive entry is typed twice.
-// An environment variable or stdin is read once.
+// AcquireConfirmed reads a passphrase. Interactive entry is typed twice,
+// through whichever backend is selected, with KindNew and then KindConfirm.
+// An environment variable or stdin is read once and is not confirmed.
 func AcquireConfirmed(src Source, firstPrompt, confirmPrompt string) ([]byte, error) {
 	if src.Env != "" || src.Stdin {
 		return Acquire(src)
@@ -117,12 +135,12 @@ func AcquireConfirmed(src Source, firstPrompt, confirmPrompt string) ([]byte, er
 	if confirmPrompt == "" {
 		confirmPrompt = "Enter it again to confirm: "
 	}
-	a, err := readFromUser(firstPrompt, src.File)
+	a, err := readFromUser(firstPrompt, src.File, KindNew)
 	if err != nil {
 		securemem.Wipe(a)
 		return nil, err
 	}
-	b, err := readFromUser(confirmPrompt, src.File)
+	b, err := readFromUser(confirmPrompt, src.File, KindConfirm)
 	if err != nil {
 		securemem.Wipe(a)
 		return nil, err
@@ -187,11 +205,11 @@ func readStdinPipe() ([]byte, error) {
 
 // readFromUser prompts on a terminal, or through an out-of-band backend
 // when stdin is not a terminal.
-func readFromUser(prompt, file string) ([]byte, error) {
+func readFromUser(prompt, file string, kind PromptKind) ([]byte, error) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		return readInteractive(prompt)
 	}
-	return promptOutOfBand(prompt, file)
+	return promptOutOfBand(prompt, file, kind)
 }
 
 // ttyTimeout is opt-in. Unset or invalid means a real terminal waits until

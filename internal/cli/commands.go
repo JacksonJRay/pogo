@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/term"
+
 	"pogo/internal/dotenv"
 	"pogo/internal/editfile"
 	"pogo/internal/filefmt"
 	"pogo/internal/passphrase"
 	"pogo/internal/securemem"
 	"pogo/internal/skill"
+	"pogo/internal/upgrade"
 )
 
 const initTemplate = `# pogo environment file
@@ -28,7 +31,7 @@ const initTemplate = `# pogo environment file
 # DATABASE_URL=postgres://prod.example/app
 `
 
-func dispatch(cmd string, opts options) (int, error) {
+func dispatch(cmd string, opts options, version string) (int, error) {
 	switch cmd {
 	case "init":
 		return cmdInit(opts)
@@ -50,6 +53,8 @@ func dispatch(cmd string, opts options) (int, error) {
 		return cmdDocker(opts)
 	case "doctor":
 		return cmdDoctor(opts)
+	case "upgrade":
+		return cmdUpgrade(opts, version)
 	default:
 		return 1, unknownCommand(cmd)
 	}
@@ -76,14 +81,18 @@ func cmdInit(opts options) (int, error) {
 	if ok && !opts.force {
 		return 1, refuseOverwrite(enc)
 	}
-	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt(), enc)
+	pass, code, err := acquire(opts, false, true, newPrompt(enc), confirmNewPrompt(enc), enc)
 	if err != nil {
 		return code, err
 	}
 	defer securemem.Wipe(pass)
-	edited, err := editfile.Edit([]byte(initTemplate), editfile.EditorCommand())
+	choice, err := editfile.Select()
 	if err != nil {
-		return explainEditor(err, false)
+		return 1, err
+	}
+	edited, code, err := editUntilValid([]byte(initTemplate), choice, enc, false)
+	if err != nil {
+		return code, err
 	}
 	defer securemem.Wipe(edited)
 	if err := writeEncrypted(enc, pass, edited); err != nil {
@@ -105,6 +114,10 @@ func cmdEdit(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
+	choice, err := editfile.Select()
+	if err != nil {
+		return 1, err
+	}
 	pass, code, err := acquire(opts, true, false, openPrompt(), "", enc)
 	if err != nil {
 		return code, err
@@ -115,9 +128,9 @@ func cmdEdit(opts options) (int, error) {
 		return explainDecrypt(err)
 	}
 	defer securemem.Wipe(plain)
-	edited, err := editfile.Edit(plain, editfile.EditorCommand())
+	edited, code, err := editUntilValid(plain, choice, enc, true)
 	if err != nil {
-		return explainEditor(err, true)
+		return code, err
 	}
 	defer securemem.Wipe(edited)
 	if bytes.Equal(plain, edited) {
@@ -227,7 +240,7 @@ func encryptLike(opts options, convert bool) (int, error) {
 		return 1, err
 	}
 	defer securemem.Wipe(data)
-	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt(), enc)
+	pass, code, err := acquire(opts, false, true, newPrompt(enc), confirmNewPrompt(enc), enc)
 	if err != nil {
 		return code, err
 	}
@@ -315,7 +328,7 @@ func cmdRekey(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	oldPass, code, err := acquire(opts, true, false, "Enter the current passphrase: ", "", enc)
+	oldPass, code, err := acquire(opts, true, false, currentPrompt(enc), "", enc)
 	if err != nil {
 		return code, err
 	}
@@ -334,7 +347,7 @@ func cmdRekey(opts options) (int, error) {
 	// The new passphrase is a create. Warn here, after the file has opened,
 	// so a failed open does not print the short-passphrase warning.
 	warnShort(newOpts)
-	newPass, code, err := acquire(newOpts, false, true, newPassPrompt(newOpts), newConfirmPrompt(), enc)
+	newPass, code, err := acquire(newOpts, false, true, newPrompt(enc), confirmNewPrompt(enc), enc)
 	if err != nil {
 		return code, err
 	}
@@ -355,10 +368,23 @@ func cmdDoctor(opts options) (int, error) {
 	if !strings.HasSuffix(d.Report(), "\n") {
 		fmt.Fprintln(os.Stdout)
 	}
+	fmt.Fprint(os.Stdout, editfile.EditorReport())
 	if d.Available {
 		return 0, nil
 	}
 	return 1, nil
+}
+
+func cmdUpgrade(opts options, version string) (int, error) {
+	if len(opts.positionals) > 0 || opts.hasDD {
+		return 1, fmt.Errorf("pogo upgrade does not take arguments.\nRun `pogo upgrade --help`.")
+	}
+	return upgrade.Run(upgrade.Options{
+		Current: version,
+		Check:   opts.upgradeCheck,
+		Yes:     opts.upgradeYes,
+		Pin:     opts.pinVersion,
+	})
 }
 
 func cmdSkill(opts options) (int, error) {
@@ -414,6 +440,9 @@ func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt, en
 		pass, err = passphrase.Acquire(src)
 	}
 	if err != nil {
+		if errors.Is(err, passphrase.ErrMismatch) {
+			return nil, 4, fmt.Errorf("The two passphrases did not match.\nNothing was written. Run the command again and enter the same passphrase both times.")
+		}
 		return nil, 1, explainPassphrase(err)
 	}
 	if opening {
@@ -486,26 +515,82 @@ func openPrompt() string {
 	return "Enter passphrase: "
 }
 
-func createPrompt(opts options) string {
-	if opts.allowShort {
-		return "Enter passphrase: "
+func promptFile(encPath string) string {
+	name := filepath.Base(encPath)
+	if name == "" || name == "." || name == string(filepath.Separator) || strings.ContainsAny(name, "\r\n") {
+		return "the file"
 	}
-	return fmt.Sprintf("Enter passphrase (min %d characters): ", passphrase.DefaultMin)
+	return name
 }
 
-func confirmPrompt() string {
-	return "Enter it again to confirm: "
+func currentPrompt(encPath string) string {
+	return "Current passphrase for " + promptFile(encPath) + ": "
 }
 
-func newPassPrompt(opts options) string {
-	if opts.allowShort {
-		return "Enter a new passphrase: "
+func newPrompt(encPath string) string {
+	return "New passphrase for " + promptFile(encPath) + ": "
+}
+
+func confirmNewPrompt(encPath string) string {
+	return "Confirm new passphrase for " + promptFile(encPath) + ": "
+}
+
+func plainLabel(encPath string) string {
+	name := promptFile(encPath)
+	if strings.HasSuffix(name, ".enc") {
+		trimmed := strings.TrimSuffix(name, ".enc")
+		if trimmed != "" && trimmed != "." {
+			return trimmed
+		}
 	}
-	return fmt.Sprintf("Enter a new passphrase (min %d characters): ", passphrase.DefaultMin)
+	if name == "the file" {
+		return ".env"
+	}
+	return name
 }
 
-func newConfirmPrompt() string {
-	return "Enter the new passphrase again to confirm: "
+func openInEditor(initial []byte, choice editfile.Choice, enc string, decrypted bool) ([]byte, error) {
+	req := editfile.Request{Initial: initial, Command: choice.CommandLine()}
+	if choice.Announce {
+		kind := "new file"
+		if decrypted {
+			kind = "decrypted"
+		}
+		req.Announce = fmt.Sprintf("Pogo opened %s (%s) in the editor. Save and close the tab to continue.\n", plainLabel(enc), kind)
+	}
+	return editfile.EditRequest(req)
+}
+
+// editUntilValid runs the editor. A changed file must parse as env text.
+// Without a terminal, a parse error removes the temp file and writes nothing.
+// With a terminal, Pogo opens the editor again on the same text.
+func editUntilValid(original []byte, choice editfile.Choice, enc string, updating bool) ([]byte, int, error) {
+	current := append([]byte(nil), original...)
+	for {
+		edited, err := openInEditor(current, choice, enc, updating)
+		if err != nil {
+			securemem.Wipe(current)
+			code, explained := explainEditor(err, updating)
+			return nil, code, explained
+		}
+		if updating && bytes.Equal(original, edited) {
+			securemem.Wipe(current)
+			return edited, 0, nil
+		}
+		if _, err := dotenv.Parse(edited); err != nil {
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				securemem.Wipe(edited)
+				securemem.Wipe(current)
+				return nil, 3, fmt.Errorf("The edit is not valid env syntax: %s.\nNothing was written. The temporary file was removed.", err.Error())
+			}
+			fmt.Fprintf(os.Stderr, "The edit is not valid env syntax: %s.\nPogo will open the editor again so you can fix it.\n", err.Error())
+			securemem.Wipe(current)
+			current = edited
+			continue
+		}
+		securemem.Wipe(current)
+		return edited, 0, nil
+	}
 }
 
 func warnShort(opts options) {
@@ -568,6 +653,8 @@ func explainEditor(err error, updating bool) (int, error) {
 		return 1, fmt.Errorf("Stopped before saving. The temporary plaintext file was deleted and no encrypted file was created.\nRun `pogo init` again when you want to create it.")
 	case errors.Is(err, editfile.ErrEditorMissing):
 		return 1, fmt.Errorf("Could not start the editor: %s.\nSet EDITOR to a program on your PATH.\nExample: EDITOR=nano pogo edit\nIn a script, set EDITOR to a program that writes the temp file and exits 0. Pogo adds the temp path as the last argument and does not use a shell.", err.Error())
+	case errors.Is(err, editfile.ErrTimeout):
+		return 1, fmt.Errorf("pogo: the editor got no answer within POGO_EDIT_TIMEOUT.\nNothing was written. The temporary file was removed.")
 	case errors.Is(err, editfile.ErrEditor):
 		if updating {
 			return 3, fmt.Errorf("The editor exited with an error, so Pogo did not update the encrypted file.\nThe previous encrypted file was left unchanged. Fix the editor problem and run the command again.")

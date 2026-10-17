@@ -3,9 +3,14 @@ package passphrase
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 )
+
+// promptCoverage is appended to doctor output so the same check is obviously
+// the one init, edit, run, encrypt, decrypt, convert, and rekey use.
+const promptCoverage = " This covers init, edit, run, encrypt, decrypt, convert, and rekey. A new passphrase is asked twice through this backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice."
 
 // Diagnosis is what `pogo doctor` prints. It does not ask for a passphrase.
 type Diagnosis struct {
@@ -28,7 +33,7 @@ func Diagnose() Diagnosis {
 		return Diagnosis{
 			Available: true,
 			Backend:   "terminal",
-			Detail:    detail + " An agent does not collect the passphrase.",
+			Detail:    detail + promptCoverage,
 		}
 	}
 	debug("stdin is not a terminal")
@@ -47,7 +52,7 @@ func Diagnose() Diagnosis {
 		return Diagnosis{
 			Available: true,
 			Backend:   "POGO_ASKPASS",
-			Detail:    "Pogo will run " + pathBase(path) + " and read one line from its stdout. An agent runs `pogo run -- <command>` with no key flags and tells the person to answer that program. Do not collect the passphrase.",
+			Detail:    "Pogo will run " + pathBase(path) + " and read one line from its stdout. An agent runs `pogo run -- <command>` with no key flags and tells the person to answer that program. Do not collect the passphrase." + promptCoverage,
 			Checks:    checks,
 		}
 	}
@@ -65,7 +70,7 @@ func Diagnose() Diagnosis {
 		return Diagnosis{
 			Available: true,
 			Backend:   "editor prompt",
-			Detail:    "Pogo will ask in the editor, in the box at the top of the window. code-server and VS Code show Pogo's prompt. Cursor titles the box with the file name. An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that box. Do not collect the passphrase.",
+			Detail:    "Pogo will ask in the editor, in the box at the top of the window. code-server and VS Code show Pogo's prompt. Cursor titles the box with the file name. An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that box. Do not collect the passphrase." + promptCoverage,
 			Checks:    checks,
 		}
 	}
@@ -96,7 +101,7 @@ func Diagnose() Diagnosis {
 	return Diagnosis{
 		Available: true,
 		Backend:   h.label,
-		Detail:    "Pogo will ask with " + h.label + ". An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that dialog. Do not collect the passphrase.",
+		Detail:    "Pogo will ask with " + h.label + ". An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that dialog. Do not collect the passphrase." + promptCoverage,
 		Checks:    checks,
 	}
 }
@@ -104,7 +109,7 @@ func Diagnose() Diagnosis {
 // Report is the text `pogo doctor` writes to stdout.
 func (d Diagnosis) Report() string {
 	if !d.Available {
-		return FormatNoPrompt(d.Checks)
+		return FormatNoPrompt(d.Checks) + "\n" + strings.TrimSpace(promptCoverage) + "\n"
 	}
 	var b []byte
 	b = fmt.Appendf(b, "backend: %s\n%s\n", d.Backend, d.Detail)

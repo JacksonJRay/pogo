@@ -98,7 +98,7 @@ func probeEditorSocket(path string) error {
 	return nil
 }
 
-func askEditor(socketPath, prompt, file string) ([]byte, error) {
+func askEditor(socketPath, prompt, file string, kind PromptKind) ([]byte, error) {
 	if !usableSocket(socketPath) {
 		return nil, &editorSkip{reason: "editor socket not found"}
 	}
@@ -110,13 +110,13 @@ func askEditor(socketPath, prompt, file string) ([]byte, error) {
 
 	placeholder := editorPlaceholder(prompt)
 	token := os.Getenv("VSCODE_GIT_IPC_AUTH_TOKEN")
-	payload, err := editorPayload(placeholder, token, file)
+	payload, err := editorPayload(placeholder, token, file, kind)
 	if err != nil {
 		conn.Close()
 		return nil, &editorSkip{reason: "editor prompt failed"}
 	}
 
-	fmt.Fprintln(os.Stderr, editorAskLine(file))
+	fmt.Fprintln(os.Stderr, editorAskLine(file, kind))
 	debug("using the editor prompt")
 
 	status, raw, err := postAskpass(conn, payload, token)
@@ -137,8 +137,8 @@ func askEditor(socketPath, prompt, file string) ([]byte, error) {
 	return decodeEditorBody(raw)
 }
 
-func editorPayload(placeholder, token, file string) ([]byte, error) {
-	host := editorURL(file)
+func editorPayload(placeholder, token, file string, kind PromptKind) ([]byte, error) {
+	host := editorURL(file, kind)
 	if token != "" && !strings.ContainsAny(token, "\r\n") {
 		return json.Marshal(struct {
 			AskpassType string `json:"askpassType"`
@@ -166,8 +166,19 @@ func editorPayload(placeholder, token, file string) ([]byte, error) {
 // say this is Pogo's passphrase for the file. The name ends in .invalid,
 // which does not resolve and cannot collide with a cached Git password.
 // code-server and VS Code still show the full prompt text from argv[2].
-func editorURL(file string) string {
-	return "https://pogo-passphrase@pogo-passphrase-for-" + hostLabel(file) + ".invalid"
+func editorURL(file string, kind PromptKind) string {
+	return "https://pogo-passphrase@" + kind.hostPrefix() + hostLabel(file) + ".invalid"
+}
+
+func (k PromptKind) hostPrefix() string {
+	switch k {
+	case KindNew:
+		return "pogo-new-passphrase-for-"
+	case KindConfirm:
+		return "pogo-confirm-passphrase-for-"
+	default:
+		return "pogo-passphrase-for-"
+	}
 }
 
 func hostLabel(file string) string {
@@ -194,12 +205,25 @@ func hostLabel(file string) string {
 	return s
 }
 
-func editorAskLine(file string) string {
+func editorAskLine(file string, kind PromptKind) string {
 	name := strings.TrimSpace(file)
-	if name == "" || strings.ContainsAny(name, "\r\n") {
-		return "Pogo is asking for the passphrase in the editor (box at the top of the window)."
+	which := "passphrase"
+	switch kind {
+	case KindNew:
+		which = "new passphrase"
+	case KindConfirm:
+		which = "confirmation passphrase"
 	}
-	return "Pogo is asking for the " + name + " passphrase in the editor (box at the top of the window)."
+	if name == "" || strings.ContainsAny(name, "\r\n") {
+		if kind == KindCurrent {
+			return "Pogo is asking for the passphrase in the editor (box at the top of the window)."
+		}
+		return "Pogo is asking for the " + which + " in the editor (box at the top of the window)."
+	}
+	if kind == KindCurrent {
+		return "Pogo is asking for the " + name + " passphrase in the editor (box at the top of the window)."
+	}
+	return "Pogo is asking for the " + which + " for " + name + " in the editor (box at the top of the window)."
 }
 
 func dialEditor(socketPath string) (net.Conn, error) {

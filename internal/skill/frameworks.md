@@ -203,7 +203,7 @@ CMD ["node","server.js"]
 docker run -it --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 ```
 
-The prompt is `Enter passphrase (min 15 characters): ` and nothing is echoed.
+The prompt is `Enter passphrase: ` and nothing is echoed.
 
 Compose, attached terminal (same entrypoint, same prompt):
 

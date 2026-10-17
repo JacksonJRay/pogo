@@ -25,10 +25,11 @@ The encrypted file is named .env.enc unless you pass -f with another name.
 `,
 		purpose: `Pogo encrypts env files and loads them into a program at startup.
 The encrypted file can sit on disk. The passphrase stays with you.
-One static binary, no network access, no telemetry, no language SDK.`,
+One static binary, no telemetry, no language SDK. upgrade is the only command that uses the network.`,
 		synopsis: "pogo <command> [flags] [arguments]",
-		args: `The first argument is a command: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, docker, or doctor.
-docker only prints the container guide. doctor only reports which passphrase prompt would be used.
+		args: `The first argument is a command: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, upgrade, docker, or doctor.
+docker only prints the container guide. doctor reports the passphrase prompt and which editor edit would open.
+upgrade replaces this binary with a GitHub release. It does not read a passphrase.
 Anything after -- is the program to run, and only for the run command.`,
 		flags: commonFlags() + `
 --version, -V
@@ -76,6 +77,7 @@ func helpFor(cmd string) (string, error) {
 		"skill":   skillHelp(),
 		"help":    helpHelp(),
 		"version": versionHelp(),
+		"upgrade": upgradeHelp(),
 		"docker":  dockerHelp(),
 		"doctor":  doctorHelp(),
 	}
@@ -91,8 +93,10 @@ func initHelp() commandDoc {
 		name: "init",
 		purpose: `Create a new encrypted env file and open it in your editor.
 Pogo writes a short commented template, opens your editor, then encrypts whatever you save.
-The editor is $EDITOR if that is set, otherwise $VISUAL, otherwise vim.
-If the editor exits with an error, Pogo does not create the file.`,
+On a terminal the editor is $POGO_EDITOR if that is set, otherwise $EDITOR, otherwise $VISUAL, otherwise vim.
+Without a terminal, vim and nano are skipped. Pogo uses POGO_EDITOR, the editor's own CLI (code --wait or cursor --wait) when VSCODE_IPC_HOOK_CLI is set, a GUI editor that waits, or a waiting desktop editor. A script in EDITOR still runs.
+If the editor exits with an error, Pogo does not create the file.
+Creating a passphrase asks twice: "New passphrase for .env.enc" and "Confirm new passphrase for .env.enc". A mismatch exits 4 and writes nothing.`,
 		synopsis: "pogo init [file]",
 		args: `file    Optional path of the encrypted file to create. Default: .env.enc
         Same as -f. If you pass both and they differ, Pogo stops.`,
@@ -136,9 +140,17 @@ func editHelp() commandDoc {
 		name: "edit",
 		purpose: `Change an encrypted env file with your normal editor.
 Pogo decrypts into a private temp file, opens your editor, encrypts the result, and deletes the temp file.
-The editor is $EDITOR if that is set, otherwise $VISUAL, otherwise vim.
-If the editor exits with an error, or you interrupt Pogo, the encrypted file is left unchanged.
-If you quit without changing the text, the encrypted file is left unchanged.`,
+On a terminal the editor is $POGO_EDITOR if that is set, otherwise $EDITOR, otherwise $VISUAL, otherwise vim.
+Without a terminal, an agent can still edit. The passphrase uses the usual prompt (terminal, POGO_ASKPASS, the editor box, or a desktop askpass). The editor then opens where a person can see it and Pogo waits until they save and close:
+  1. $POGO_EDITOR, if set. A command, so "code --wait" is allowed.
+  2. When VSCODE_IPC_HOOK_CLI is set (code-server, VS Code, VS Code Remote, Cursor), the editor's own CLI with --wait. Pogo looks next to $VSCODE_GIT_ASKPASS_NODE in bin/remote-cli, then for code-server, code, cursor, or codium on PATH, preferring the one that matches TERM_PROGRAM. Stderr says: Pogo opened .env (decrypted) in the editor. Save and close the tab to continue.
+  3. $EDITOR or $VISUAL when it is a GUI editor that waits (code --wait, cursor --wait, gedit -s, subl -w) or any other command that is not a terminal editor. vim, nano, vi, and emacs -nw need a terminal, so they are skipped. A script in EDITOR still runs. xdg-open does not wait, so it is skipped.
+  4. On a real display, a known waiting GUI editor on PATH (cursor --wait, code --wait, gedit -s, and the same kind of command).
+If none of those can open a window, Pogo exits 1. It names what was checked and does not print the decrypted file.
+The temp file is mode 0600 in a private 0700 directory under $XDG_RUNTIME_DIR, or /dev/shm, or the system temp directory. Pogo overwrites and removes it on success, editor failure, a signal, and POGO_EDIT_TIMEOUT.
+If you quit without changing the text, the encrypted file is left unchanged.
+The saved text must parse as an env file. Without a terminal, a syntax error exits 3 and writes nothing. On a terminal, Pogo opens the editor again.
+POGO_EDIT_TIMEOUT is a number of seconds. Unset, Pogo waits until the editor exits.`,
 		synopsis: "pogo edit [file]",
 		args: `file    Optional encrypted file. Default: .env.enc
         Same as -f. If you pass both and they differ, Pogo stops.`,
@@ -319,8 +331,9 @@ func rekeyHelp() commandDoc {
 	return commandDoc{
 		name: "rekey",
 		purpose: `Change the passphrase on an encrypted file.
-Pogo decrypts with the current passphrase and writes the file again with a new passphrase, a new salt, and a new nonce.
-The old passphrase stops working.`,
+Pogo asks "Current passphrase for .env.enc", decrypts with that passphrase, and only then asks "New passphrase for .env.enc" and "Confirm new passphrase for .env.enc".
+The new passphrase is asked twice through the same prompt as every other command. A mismatch exits 4 and writes nothing.
+Pogo then writes the file again with a new salt and a new nonce. The old passphrase stops working.`,
 		synopsis: "pogo rekey [file]",
 		args: `file    Optional encrypted file. Default: .env.enc
         Same as -f. If you pass both and they differ, Pogo stops.`,
@@ -386,9 +399,9 @@ func helpHelp() commandDoc {
 "pogo help", "pogo --help", and "pogo -h" are the same page.
 "pogo help run", "pogo run --help", and "pogo run -h" are the same page.`,
 		synopsis: "pogo help [command]",
-		args: `command    Optional command name: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, docker, or doctor.
+		args: `command    Optional command name: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, upgrade, docker, or doctor.
           With no command, Pogo prints the main help page.
-          docker is a guide, not a container runtime. doctor does not ask for a passphrase.`,
+          docker is a guide, not a container runtime. doctor does not ask for a passphrase. upgrade does not ask for one either.`,
 		flags: `
 -h, --help
     With no command name, show this page (help for the help command).
@@ -408,10 +421,66 @@ pogo help docker`,
 	}
 }
 
+func upgradeHelp() commandDoc {
+	return commandDoc{
+		name: "upgrade",
+		purpose: `Replace this pogo binary with a release from https://github.com/JacksonJRay/pogo/releases.
+Pogo reads the latest GitHub release, or the release named by --version. It downloads pogo-<os>-<arch> and SHA256SUMS over HTTPS, checks the SHA256, and replaces the running binary only after the new file's version command prints the expected version.
+If this binary is already the latest, Pogo prints "pogo 1.0.4 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
+A terminal shows the versions and asks "Install? [y/N]". With no terminal, pass --yes, or Pogo exits 1 and tells you to add it. --check does not install.
+upgrade does not ask for a passphrase and does not read an env file.
+POGO_UPGRADE_API replaces the GitHub API base. It is for tests. Leave it unset. Plain HTTP is refused except for a localhost test server.
+GITHUB_TOKEN is sent as a bearer token only to api.github.com, and only when it is set.`,
+		synopsis: "pogo upgrade [--check] [--yes] [--version vX.Y.Z]",
+		args:     "No positional arguments.",
+		flags: `
+--check
+    Compare this binary with the latest release and do not install.
+    Exit 0 when this binary is current. Exit 10 when a newer release exists.
+    With --version, compare with that release instead. Exit 10 when it differs.
+
+--yes
+    Install without asking. Required when stdin is not a terminal, unless you only pass --check.
+
+--version vX.Y.Z
+    Install that release, including an older one. This is the only downgrade.
+    "pogo --version" with no command still prints the running version.
+
+-h, --help
+    Show this help and exit 0.
+`,
+		examples: `pogo upgrade --check
+pogo upgrade
+pogo upgrade --yes
+pogo upgrade --version v1.0.3`,
+		workflows: `See whether an upgrade exists:
+  pogo upgrade --check
+
+Install it. On a terminal, answer the prompt. In a script or an agent session, pass --yes:
+  pogo upgrade --yes
+
+If Pogo says permission denied, run the same command with sudo, or copy the binary to a directory you own and upgrade that copy.
+A Nix store path is left untouched. Upgrade that copy with Nix.
+
+Pin a release, including an older one:
+  pogo upgrade --version v1.0.3 --yes`,
+		frameworks: "upgrade replaces the pogo binary. It does not change how a program reads variables. The passphrase for an env file is not involved.",
+		security: `The download uses HTTPS and the default proxy settings, including HTTPS_PROXY.
+Pogo checks SHA256SUMS before it writes over the installed binary. A mismatch leaves the original in place.
+The new binary's version command must print the expected version before the file is renamed into place.
+There is no telemetry. upgrade is the only command that uses the network.
+` + securityNotes(),
+		exits: `0    This binary is current, or the new binary was installed.
+1    The upgrade failed, was cancelled, there was no terminal and no --yes, or the command was used wrong. The original binary is unchanged.
+10   pogo upgrade --check found a newer release, or a --version pin that is not the running version. Nothing was installed.
+`,
+	}
+}
+
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.3".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.4".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -434,9 +503,11 @@ pogo version --help`,
 func doctorHelp() commandDoc {
 	return commandDoc{
 		name: "doctor",
-		purpose: `Report which passphrase prompt Pogo would use, without asking for one.
+		purpose: `Report which passphrase prompt Pogo would use, without asking for one, and which editor pogo edit and pogo init would run.
+The passphrase check covers init, edit, run, encrypt, decrypt, convert, and rekey. A new passphrase is asked twice through that same backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice.
 Exit 0 when a terminal, POGO_ASKPASS, the editor prompt, or a desktop askpass is available.
 Exit 1 when nothing can ask. The text names what was checked and tells an agent not to collect the passphrase in chat.
+The editor section is separate. It prints "editor:" and the command Pogo would run, or the same no-editor message as pogo edit. It does not change the exit code, because pogo run does not open an editor.
 POGO_DEBUG=1 also prints the same decisions on stderr while a real command runs.`,
 		synopsis: "pogo doctor",
 		args:     "No arguments.",
@@ -719,7 +790,7 @@ func commonFlags() string {
     You do not press Ctrl-D. The program keeps the terminal.
     Default: off. If you also did not set --key-env, Pogo asks in the terminal when stdin is a terminal.
     When stdin is not a terminal, Pogo asks through a prompt already on the machine, in this order: POGO_ASKPASS, the editor Git prompt (VSCODE_GIT_IPC_HANDLE, used by code-server, VS Code, and Cursor), then a desktop askpass when a display socket is really there.
-    code-server and VS Code show Pogo's prompt. Cursor titles its box from a fake host, pogo-passphrase-for-<file>.invalid. That is Pogo's passphrase, not a Git login.
+    code-server and VS Code show Pogo's prompt. Cursor titles its box from a fake host. Opening a file uses pogo-passphrase-for-<file>.invalid. A new passphrase uses pogo-new-passphrase-for-<file>.invalid, and the confirmation uses pogo-confirm-passphrase-for-<file>.invalid. Each name ends in .invalid. That is Pogo's passphrase, not a Git login.
     A local DISPLAY of :N is used only when /tmp/.X11-unix/XN exists. A missing socket is reported as "display set but no X server socket".
     If the editor accepts the request and does not answer, Pogo exits 1. The first line is "pogo: the editor prompt got no answer within the timeout". It does not open another dialog.
     An agent runs "pogo doctor", then "pogo run -- <command>" with no key flags, and does not collect the passphrase.
@@ -760,7 +831,7 @@ func securityNotes() string {
 --key-file and --new-key-file were removed on purpose. A file that can decrypt the env file would be another secret stored on the system. Type the passphrase, or pipe it with --key-stdin. Prefer --key-stdin over --key-env. --key-env leaves the passphrase in the process environment, which is visible in /proc and docker inspect, so use it only as a last resort.
 Pogo uses AES-256-GCM, which is the encryption, and Argon2id, which turns your passphrase into the key slowly so guessing is expensive. You do not configure either one. The slow step uses 128 MiB of memory, 4 passes, and 4 lanes. Each save gets a new random salt and a new random nonce (extra random bytes so two saves of the same text do not look alike).
 The file header (including those parameters) is checked as part of decryption. A wrong passphrase or a flipped bit fails decryption (exit 2).
-There is no network access and no telemetry.
+There is no telemetry. Commands other than upgrade do not use the network. pogo upgrade downloads a release over HTTPS.
 Pogo tries to zero passphrase and key bytes after use. Go can still keep copies the program cannot reach; do not treat zeroing as a guarantee. See the README.
 --allow-short-passphrase skips the 15-character minimum when you create a passphrase. Short passphrases are much easier to guess. Leave it off unless you mean to use a short passphrase. A blank passphrase is still rejected. Opening an existing file does not apply that minimum, and passing the flag then has no effect.
 `
@@ -768,11 +839,12 @@ Pogo tries to zero passphrase and key bytes after use. Go can still keep copies 
 
 func exitNotes() string {
 	return `0    Success. For "pogo run", once your program has started, this is your program's exit code.
-1    Something else went wrong: usage, a missing file, a mismatched confirmation, or the program was not found.
+1    Something else went wrong: usage, a missing file, the prompt was cancelled, no editor was available, or the program was not found.
 2    Decryption failed. The passphrase was wrong, or the file is damaged.
-3    The editor ran and exited non-zero. The encrypted file was not updated.
-4    Creating a passphrase: shorter than 15 characters, or empty or only whitespace.
+3    The editor ran and exited non-zero, or the edit was not valid env syntax and there was no terminal to fix it. The encrypted file was not updated.
+4    Creating a passphrase: shorter than 15 characters, empty or only whitespace, or the two entries did not match. Nothing was written.
      --allow-short-passphrase skips the 15-character minimum and still rejects a blank passphrase.
      Opening an existing file: only an empty passphrase is rejected with this code. A wrong passphrase is exit 2.
+10   pogo upgrade --check only. A newer release exists, or --version names a different release. Nothing was installed.
 `
 }

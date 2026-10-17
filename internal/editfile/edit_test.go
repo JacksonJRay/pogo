@@ -8,6 +8,8 @@ import (
 )
 
 func TestEditRewritesAndRemoves(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("POGO_EDIT_TIMEOUT", "")
 	dir := t.TempDir()
 	script := filepath.Join(dir, "ed.sh")
 	statPath := filepath.Join(dir, "mode")
