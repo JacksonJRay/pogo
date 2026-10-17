@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-17 — 1.0.3
+
+- When stdin is not a terminal and no key flag is set, Pogo asks through a prompt already on the machine. It tries `POGO_ASKPASS`, then the editor Git prompt (`VSCODE_GIT_IPC_HANDLE`, used by code-server, VS Code, and Cursor), then a desktop askpass when `WAYLAND_DISPLAY`, `DISPLAY`, or `MIR_SOCKET` is set. A real terminal still uses the echo-off prompt and waits until you type or press Ctrl-C. `POGO_TTY_TIMEOUT` is an optional number of seconds for a terminal nobody is watching. `--key-env` and `--key-stdin` are unchanged.
+- If nothing can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`. The message lists what was checked and the ways forward, in order: a terminal, `docker run -it`, `--key-stdin` from a secret manager, `POGO_ASKPASS`, and `--key-env` as a last resort. The last line tells an agent not to ask for the passphrase in chat.
+- `pogo doctor` reports which prompt would be used and does not ask. Exit 0 when one is available, exit 1 when not. `POGO_DEBUG=1` prints detection decisions on stderr.
+- `--key-file` and `--new-key-file` stay rejected.
+
 ## 2026-10-17 — 1.0.2
 
 - Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) accepts any passphrase whose length is greater than 0. Only an empty passphrase is rejected (exit 4). A wrong passphrase still fails with exit 2. `--allow-short-passphrase` is still accepted on those commands and has no effect; Pogo does not print the short-passphrase warning on the open path. `edit` re-saves with the same passphrase and does not apply the creation minimum again.

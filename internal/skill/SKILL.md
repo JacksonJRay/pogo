@@ -43,6 +43,10 @@ Never place the passphrase in shell history, logs, version control, or a file.
 `--key-file` was removed. Do not write the passphrase to a file, and do not ask Pogo to read one.
 
 ## Rules for agents
+- Run `pogo doctor` before starting a program. It does not ask for a passphrase.
+- If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
+- If doctor exits 1, or Pogo prints `pogo: no way to ask for the passphrase here`, ask the person to run the command in their own terminal, or to pipe a secret manager into `--key-stdin`. Do not ask for the passphrase in chat. If you are an AI agent: do not ask the person to paste the passphrase into chat; ask them to run this command in their own terminal.
+- `--key-env` is a last resort. The value stays visible in `/proc` and `docker inspect`.
 - Prefer `pogo convert` when a plaintext `.env` already exists
 - Show the exact command to the user before executing anything that writes or deletes
 - Never echo, log, or store the passphrase

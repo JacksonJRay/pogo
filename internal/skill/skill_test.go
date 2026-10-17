@@ -16,6 +16,10 @@ func TestAgentRules(t *testing.T) {
 		"`bash -lc` can reset `PATH`",
 		"/usr/local/bin",
 		"Never pass `--key-file` or `--new-key-file`",
+		"pogo doctor",
+		"pogo run -- <command>` with no key flags",
+		"does not collect the passphrase",
+		"do not ask the person to paste the passphrase into chat",
 		"Do not pass `--allow-short-passphrase` unless the user explicitly asks",
 		"printf '%s' \"$SHORT_PASS\" | pogo convert .env --key-stdin --allow-short-passphrase",
 	} {

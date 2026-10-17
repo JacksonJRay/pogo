@@ -11,8 +11,22 @@ import (
 
 	"pogo/internal/dotenv"
 	"pogo/internal/filefmt"
+	"pogo/internal/passphrase"
 	"pogo/internal/skill"
 )
+
+func clearPromptEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"POGO_ASKPASS", "POGO_DEBUG", "POGO_TTY_TIMEOUT",
+		"VSCODE_GIT_IPC_HANDLE", "VSCODE_GIT_IPC_AUTH_TOKEN",
+		"DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET",
+		"XDG_CURRENT_DESKTOP", "XDG_RUNTIME_DIR",
+		"SSH_CONNECTION", "SSH_CLIENT", "WSL_DISTRO_NAME", "WSL_INTEROP",
+	} {
+		t.Setenv(key, "")
+	}
+}
 
 func capture(t *testing.T) (out, errOut *bytes.Buffer, done func()) {
 	t.Helper()
@@ -218,8 +232,19 @@ func TestUsageAndShortPassphrase(t *testing.T) {
 	if code != 2 || strings.Contains(stderr, "too short") {
 		t.Fatalf("rekey short current %d %s", code, stderr)
 	}
+	clearPromptEnv(t)
+	restoreDirs := passphrase.SetAskpassDirsForTest(nil)
+	defer restoreDirs()
+	pin, pout, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pout.Close()
+	oldIn := os.Stdin
+	os.Stdin = pin
+	defer func() { os.Stdin = oldIn; pin.Close() }()
 	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "tty.enc"))
-	if code != 1 || !strings.Contains(stderr, "not a terminal") || !strings.Contains(stderr, "-it") || !strings.Contains(stderr, "--key-stdin") {
+	if code != 1 || !strings.Contains(stderr, "pogo: no way to ask for the passphrase here") || !strings.Contains(stderr, "docker run -it") || !strings.Contains(stderr, "--key-stdin") || !strings.Contains(stderr, "Last resort") || !strings.Contains(stderr, "If you are an AI agent:") {
 		t.Fatalf("no tty %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "a.enc"), "other.enc")
@@ -282,7 +307,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.2") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.3") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")

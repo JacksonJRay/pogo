@@ -27,8 +27,9 @@ The encrypted file is named .env.enc unless you pass -f with another name.
 The encrypted file can sit on disk. The passphrase stays with you.
 One static binary, no network access, no telemetry, no language SDK.`,
 		synopsis: "pogo <command> [flags] [arguments]",
-		args: `The first argument is a command: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, or docker.
-docker only prints the container guide. Anything after -- is the program to run, and only for the run command.`,
+		args: `The first argument is a command: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, docker, or doctor.
+docker only prints the container guide. doctor only reports which passphrase prompt would be used.
+Anything after -- is the program to run, and only for the run command.`,
 		flags: commonFlags() + `
 --version, -V
     Print the version and exit 0. Same as: pogo version
@@ -76,6 +77,7 @@ func helpFor(cmd string) (string, error) {
 		"help":    helpHelp(),
 		"version": versionHelp(),
 		"docker":  dockerHelp(),
+		"doctor":  doctorHelp(),
 	}
 	doc, ok := docs[cmd]
 	if !ok {
@@ -384,9 +386,9 @@ func helpHelp() commandDoc {
 "pogo help", "pogo --help", and "pogo -h" are the same page.
 "pogo help run", "pogo run --help", and "pogo run -h" are the same page.`,
 		synopsis: "pogo help [command]",
-		args: `command    Optional command name: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, or docker.
+		args: `command    Optional command name: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, docker, or doctor.
           With no command, Pogo prints the main help page.
-          docker is a guide, not a container runtime.`,
+          docker is a guide, not a container runtime. doctor does not ask for a passphrase.`,
 		flags: `
 -h, --help
     With no command name, show this page (help for the help command).
@@ -409,7 +411,7 @@ pogo help docker`,
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.2".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.3".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -426,6 +428,41 @@ pogo version --help`,
 		frameworks: "The version does not change how env files work. v1 files store their own key-derivation settings in the file header.",
 		security:   securityNotes(),
 		exits:      exitNotes(),
+	}
+}
+
+func doctorHelp() commandDoc {
+	return commandDoc{
+		name: "doctor",
+		purpose: `Report which passphrase prompt Pogo would use, without asking for one.
+Exit 0 when a terminal, POGO_ASKPASS, the editor prompt, or a desktop askpass is available.
+Exit 1 when nothing can ask. The text names what was checked and tells an agent not to collect the passphrase in chat.
+POGO_DEBUG=1 also prints the same decisions on stderr while a real command runs.`,
+		synopsis: "pogo doctor",
+		args:     "No arguments.",
+		flags: `
+-h, --help
+    Show this help and exit 0.
+`,
+		examples: `pogo doctor
+POGO_DEBUG=1 pogo doctor
+pogo help doctor`,
+		workflows: `An agent runs this before starting a program:
+
+  pogo doctor
+
+If it prints a backend and exits 0, run the program with no key flags and tell the person to watch for the prompt:
+
+  pogo run -- npm start
+
+If it exits 1, ask the person to run that command in their own terminal, or to pipe a secret manager into --key-stdin. Do not ask them to paste the passphrase into chat. --key-env is a last resort because the value stays visible in /proc and docker inspect.
+
+A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use.`,
+		frameworks: "doctor is the same for every language. It does not decrypt a file and it does not start a program.",
+		security:   securityNotes() + "\ndoctor does not read, print, or store a passphrase. It does not print POGO_ASKPASS secrets or the editor auth token.\n",
+		exits: `0    A prompt is available (this terminal, POGO_ASKPASS, the editor, or a desktop askpass).
+1    No prompt is available, or the command was used wrong.
+`,
 	}
 }
 
@@ -494,12 +531,13 @@ Recipe 5. Compose.
 
 --key-stdin on a terminal. docker run -it with a --key-stdin entrypoint prints the passphrase prompt, turns echo off, and reads one line. You do not press Ctrl-D. A pipe still uses docker run -i or docker compose run -T.
 
-Troubleshooting. When stdin is not a terminal and you did not pass --key-stdin or --key-env, Pogo exits 1 and prints:
+Troubleshooting. When stdin is not a terminal and no prompt on the machine can ask, Pogo exits 1. The first line is:
 
-    no passphrase was provided, and stdin is not a terminal so Pogo cannot ask for one.
-    If this is Docker, add -it (docker run -it), or use docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.
-    Or pass the passphrase with --key-stdin (docker run -i, or docker compose run -T; the program cannot also read stdin) or --key-env NAME.
-    Pogo does not read a passphrase from a file.
+    pogo: no way to ask for the passphrase here
+
+The next lines name what was checked (POGO_ASKPASS, the editor socket, display). Ways forward, in order: run it yourself in a terminal; docker run -it (or compose run, or compose up with stdin_open and tty, then docker attach); --key-stdin piped from a secret manager; POGO_ASKPASS; and --key-env as a last resort (visible in /proc and docker inspect). The last line tells an agent not to ask for the passphrase in chat. Run "pogo doctor" to see the same choice without starting the program.
+
+A terminal waits at the passphrase prompt until you type or press Ctrl-C. POGO_TTY_TIMEOUT is an optional number of seconds. Leave it unset for normal interactive use.
 
 systemd has no terminal. Pipe from a password manager, or use --key-env for that process only. --key-env is visible in /proc and in systemctl show. Do not point Pogo at a file.
     ExecStart=/bin/sh -c 'op read op://vault/pogo/passphrase | /usr/local/bin/pogo run -f /etc/myapp/.env.enc --key-stdin -- /usr/bin/myapp'
@@ -677,7 +715,12 @@ func commonFlags() string {
     When stdin is a terminal, Pogo prints the usual passphrase prompt to stderr, turns echo off, and reads one line.
     That is the same as the interactive prompt. docker run -it with a --key-stdin entrypoint does this.
     You do not press Ctrl-D. The program keeps the terminal.
-    Default: off. If you also did not set --key-env, Pogo asks in the terminal.
+    Default: off. If you also did not set --key-env, Pogo asks in the terminal when stdin is a terminal.
+    When stdin is not a terminal, Pogo asks through a prompt already on the machine, in this order: POGO_ASKPASS, the editor Git prompt (VSCODE_GIT_IPC_HANDLE, used by code-server, VS Code, and Cursor), then a desktop askpass when WAYLAND_DISPLAY, DISPLAY, or MIR_SOCKET is set.
+    An agent runs "pogo doctor", then "pogo run -- <command>" with no key flags, and does not collect the passphrase.
+    If nothing can ask, Pogo exits 1. The first line is "pogo: no way to ask for the passphrase here".
+    POGO_DEBUG=1 prints those detection steps on stderr. It never prints the passphrase.
+    A real terminal waits until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when nobody is at that terminal.
     Pogo will not read a passphrase from a file. --key-file was removed.
 
 --allow-short-passphrase

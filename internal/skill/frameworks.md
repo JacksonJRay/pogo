@@ -272,14 +272,7 @@ read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker compose run -T --rm app 
 op read op://vault/pogo/passphrase | docker compose run -T --rm app
 ```
 
-When stdin is not a terminal and you did not pass `--key-stdin` or `--key-env`, Pogo exits 1 and prints:
-
-```text
-no passphrase was provided, and stdin is not a terminal so Pogo cannot ask for one.
-If this is Docker, add -it (docker run -it), or use docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.
-Or pass the passphrase with --key-stdin (docker run -i, or docker compose run -T; the program cannot also read stdin) or --key-env NAME.
-Pogo does not read a passphrase from a file.
-```
+When stdin is not a terminal and nothing on the machine can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`. It lists what was checked. Ways forward, in order: run it in a terminal; `docker run -it`; `--key-stdin` from a secret manager; `POGO_ASKPASS`; `--key-env` as a last resort. An agent does not ask for the passphrase in chat. `pogo doctor` prints the same choice without starting the program.
 
 systemd has no terminal. Pipe from a password manager, or use `--key-env` for that process only (visible in `/proc`). Do not point Pogo at a file.
 
