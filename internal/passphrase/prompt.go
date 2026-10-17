@@ -76,7 +76,9 @@ func FormatNoPrompt(checks []string) string {
 //   - Stderr or stdout contains a known display-connection phrase
 //     ("cannot open display", a Wayland connect failure, X11 "no protocol
 //     specified", and the phrases in displayFailurePhrases): the helper
-//     never showed a dialog. It is unavailable. Pogo tries the next helper.
+//     never showed a dialog. The same list includes the gcr relay failures
+//     ("not meant to be run directly", "couldn't connect to askpass socket").
+//     The helper is unavailable. Pogo tries the next helper.
 //   - Any other non-zero exit, including a typical cancel button: the person
 //     cancelled. Pogo stops. A cancel dialog and a broken helper look the
 //     same unless the helper names a display error, so this is the rule.
@@ -180,6 +182,10 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 		return nil, &NoPromptError{Checks: checks}
 	}
 	for _, h := range helpers {
+		if reason := helperBlock(h); reason != "" {
+			note(reason)
+			continue
+		}
 		pass, err := runProgram(h.label, h.argv(text), modeDesktop)
 		if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
 			return pass, err
@@ -375,6 +381,12 @@ var displayFailurePhrases = []string{
 	"failed to connect to the wayland",
 	"unable to init server",
 	"qt.qpa.xcb: could not connect to display",
+	// gcr4-ssh-askpass relays to GCR_SSH_ASKPASS_SOCKET. These mean it
+	// never showed a dialog, so the next helper can be tried.
+	"not meant to be run directly",
+	"couldn't connect to askpass socket",
+	"could not connect to askpass socket",
+	"couldn't open socket",
 }
 
 func isDisplayFailure(chunks ...[]byte) bool {

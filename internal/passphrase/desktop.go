@@ -68,6 +68,26 @@ func findHelpers() []foundHelper {
 	return found
 }
 
+// helperBlock reports why a found helper cannot show a prompt.
+// gcr4-ssh-askpass and gcr-ssh-askpass are relays. GNOME's prompter sets
+// GCR_SSH_ASKPASS_SOCKET and then execs them. Run directly, they exit
+// without a dialog ("not meant to be run directly"). Skip them unless that
+// socket exists, and try the next helper (zenity, kdialog, gnome-ssh-askpass).
+func helperBlock(h foundHelper) string {
+	switch h.label {
+	case "gcr4-ssh-askpass", "gcr-ssh-askpass":
+		if !gcrSocketReady() {
+			return h.label + " skipped (GCR askpass socket is not available)"
+		}
+	}
+	return ""
+}
+
+func gcrSocketReady() bool {
+	path := os.Getenv("GCR_SSH_ASKPASS_SOCKET")
+	return path != "" && usableSocket(path)
+}
+
 func desktopFamily(xdg string) string {
 	parts := strings.FieldsFunc(xdg, func(r rune) bool {
 		return r == ':' || r == ';' || r == ','

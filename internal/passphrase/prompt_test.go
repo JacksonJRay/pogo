@@ -25,7 +25,7 @@ func quietEnv(t *testing.T) string {
 		"DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET",
 		"XDG_CURRENT_DESKTOP", "XDG_RUNTIME_DIR",
 		"SSH_CONNECTION", "SSH_CLIENT", "WSL_DISTRO_NAME", "WSL_INTEROP",
-		"TMUX", "STY",
+		"TMUX", "STY", "GCR_SSH_ASKPASS_SOCKET",
 	} {
 		t.Setenv(key, "")
 	}
@@ -440,6 +440,13 @@ func TestFlatpakSocketAndAmbiguousRuntime(t *testing.T) {
 func TestDesktopPreferenceAndCancel(t *testing.T) {
 	dir := quietEnv(t)
 	log := filepath.Join(dir, "which")
+	// gcr4 only runs when GNOME's relay socket exists.
+	ln, err := net.Listen("unix", filepath.Join(dir, "gcr.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	t.Setenv("GCR_SSH_ASKPASS_SOCKET", filepath.Join(dir, "gcr.sock"))
 	writeExec(t, dir, "gcr4-ssh-askpass", "#!/bin/sh\necho gcr4 >> "+log+"\nprintf '%s\\n' 'from-gcr'\n")
 	writeExec(t, dir, "ksshaskpass", "#!/bin/sh\necho kssh >> "+log+"\nprintf '%s\\n' 'from-kde'\n")
 	t.Setenv("DISPLAY", ":1")
@@ -559,9 +566,68 @@ func TestLibexecWhenPathEmpty(t *testing.T) {
 	t.Cleanup(SetAskpassDirsForTest([]string{lib}))
 	t.Setenv("PATH", "")
 	t.Setenv("DISPLAY", ":1")
+	// The libexec binary is named gcr4-ssh-askpass, which Pogo runs only
+	// when GNOME's relay socket exists. The script itself ignores the socket.
+	ln, err := net.Listen("unix", filepath.Join(dir, "gcr.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	t.Setenv("GCR_SSH_ASKPASS_SOCKET", ln.Addr().String())
 	got, err := mustAcquire(t, Source{})
 	if err != nil || string(got) != "from-libexec" {
 		t.Fatalf("%q %v", got, err)
+	}
+}
+
+func TestGCRRelaySkippedWithoutSocket(t *testing.T) {
+	dir := quietEnv(t)
+	log := filepath.Join(dir, "which")
+	writeExec(t, dir, "gcr4-ssh-askpass", "#!/bin/sh\necho gcr4 >> "+log+"\nprintf '%s\\n' 'from-gcr'\n")
+	writeExec(t, dir, "zenity", "#!/bin/sh\necho zenity >> "+log+"\nprintf '%s\\n' 'from-zenity'\n")
+	t.Setenv("DISPLAY", ":1")
+	t.Setenv("XDG_CURRENT_DESKTOP", "GNOME")
+	got, err := mustAcquire(t, Source{File: ".env.enc"})
+	if err != nil || string(got) != "from-zenity" {
+		t.Fatalf("skip %q %v", got, err)
+	}
+	which, _ := os.ReadFile(log)
+	if bytes.Contains(which, []byte("gcr4")) || !bytes.Contains(which, []byte("zenity")) {
+		t.Fatalf("ran %s", which)
+	}
+	d := Diagnose()
+	if !d.Available || d.Backend != "zenity" {
+		t.Fatalf("doctor %+v", d)
+	}
+	if !strings.Contains(d.Report(), "GCR askpass socket is not available") {
+		t.Fatalf("doctor %s", d.Report())
+	}
+
+	// A live socket makes the relay eligible. A relay that still cannot
+	// connect falls through; it is not a cancel.
+	sock := filepath.Join(dir, "gcr.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	t.Setenv("GCR_SSH_ASKPASS_SOCKET", sock)
+	writeExec(t, dir, "gcr4-ssh-askpass", "#!/bin/sh\necho gcr4 >> "+log+"\necho 'gcr4-ssh-askpass: this program is not meant to be run directly' >&2\nexit 2\n")
+	os.Remove(log)
+	got, err = mustAcquire(t, Source{})
+	if err != nil || string(got) != "from-zenity" {
+		t.Fatalf("fallthrough %q %v", got, err)
+	}
+	which, _ = os.ReadFile(log)
+	if !bytes.Contains(which, []byte("gcr4")) || !bytes.Contains(which, []byte("zenity")) {
+		t.Fatalf("order %s", which)
+	}
+
+	writeExec(t, dir, "gcr4-ssh-askpass", "#!/bin/sh\necho gcr4 >> "+log+"\nprintf '%s\\n' 'from-gcr-socket'\n")
+	os.Remove(log)
+	got, err = mustAcquire(t, Source{})
+	if err != nil || string(got) != "from-gcr-socket" {
+		t.Fatalf("socket %q %v", got, err)
 	}
 }
 

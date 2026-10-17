@@ -79,7 +79,19 @@ func Diagnose() Diagnosis {
 		note("no desktop askpass found")
 		return Diagnosis{Backend: "none", Checks: checks}
 	}
-	h := helpers[0]
+	var chosen *foundHelper
+	for i := range helpers {
+		if reason := helperBlock(helpers[i]); reason != "" {
+			note(reason)
+			continue
+		}
+		chosen = &helpers[i]
+		break
+	}
+	if chosen == nil {
+		return Diagnosis{Backend: "none", Checks: checks}
+	}
+	h := *chosen
 	debug("display is set; desktop helper " + h.label)
 	return Diagnosis{
 		Available: true,
