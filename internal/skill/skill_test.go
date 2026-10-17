@@ -21,6 +21,7 @@ func TestAgentRules(t *testing.T) {
 		"does not collect the passphrase",
 		"do not ask the person to paste the passphrase into chat",
 		"pogo: the editor prompt got no answer within the timeout",
+		"pogo: the POGO_ASKPASS prompt got no answer within the timeout",
 		"POGO_PROMPT_TIMEOUT",
 		"pogo-passphrase-for-.env.enc.invalid",
 		"Do not enter a Git password or a personal access token",

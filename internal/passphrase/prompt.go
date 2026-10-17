@@ -70,24 +70,52 @@ func FormatNoPrompt(checks []string) string {
 // and did not answer. It stays stable so a person or an agent can grep for it.
 const EditorTimeoutSummary = "pogo: the editor prompt got no answer within the timeout"
 
-// EditorTimeoutError means the editor socket accepted the askpass request and
-// then did not answer before the prompt timeout. The box may still be open.
-// Callers stop. They do not try a desktop askpass.
-type EditorTimeoutError struct {
+// PromptTimeoutError means a prompt was shown and nobody answered before the
+// prompt timeout. Callers stop. They do not open another dialog.
+// What is "editor", "POGO_ASKPASS", or a desktop helper label.
+type PromptTimeoutError struct {
+	What string
 	Wait time.Duration
 }
 
-func (e *EditorTimeoutError) Error() string {
+// EditorTimeoutError is the editor case of PromptTimeoutError.
+type EditorTimeoutError = PromptTimeoutError
+
+func (e *PromptTimeoutError) Error() string {
 	wait := promptTimeout
-	if e != nil && e.Wait > 0 {
-		wait = e.Wait
+	what := "editor"
+	if e != nil {
+		if e.Wait > 0 {
+			wait = e.Wait
+		}
+		if e.What != "" {
+			what = e.What
+		}
+	}
+	kind := "editor prompt"
+	subject := "The editor"
+	switch what {
+	case "editor":
+	case "POGO_ASKPASS":
+		kind = "POGO_ASKPASS prompt"
+		subject = "POGO_ASKPASS"
+	default:
+		kind = what + " prompt"
+		subject = what
 	}
 	var b strings.Builder
-	b.WriteString(EditorTimeoutSummary)
-	b.WriteByte('\n')
-	fmt.Fprintf(&b, "The editor was asked and did not answer within %s. Pogo did not open another dialog.\n", wait)
+	fmt.Fprintf(&b, "pogo: the %s got no answer within the timeout\n", kind)
+	fmt.Fprintf(&b, "%s was asked and did not answer within %s. Pogo did not open another dialog.\n", subject, wait)
 	writeWaysForward(&b)
 	return b.String()
+}
+
+func finishedPrompt(err error) bool {
+	if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
+		return true
+	}
+	var timed *PromptTimeoutError
+	return errors.As(err, &timed)
 }
 
 func writeWaysForward(b *strings.Builder) {
@@ -111,12 +139,13 @@ func writeWaysForward(b *strings.Builder) {
 //   - Any other non-zero exit, including a typical cancel button: the person
 //     cancelled. Pogo stops. A cancel dialog and a broken helper look the
 //     same unless the helper names a display error, so this is the rule.
-//   - The dialog timeout (the process was started and did not exit): cancel
-//     and stop. A second dialog after a missed one is worse than stopping.
+//   - The dialog timeout (the process was started and did not exit): the
+//     prompt got no answer. Pogo stops with PromptTimeoutError. It does not
+//     open another dialog. A non-zero exit, including Escape, stays a cancel.
 //
-// POGO_ASKPASS follows the SSH_ASKPASS contract instead: exit 0 submits,
-// any other exit or a timeout cancels and stops. If that program cannot be
-// started, it cannot show a prompt, so Pogo falls through.
+// POGO_ASKPASS follows the SSH_ASKPASS contract: exit 0 submits, any other
+// exit cancels and stops. A timeout is "no answer", not a cancel. If that
+// program cannot be started, it cannot show a prompt, so Pogo falls through.
 //
 // The editor channel falls through on a missing socket, a refused connection,
 // a dial timeout, or a non-200. Those never showed a box. Cancel is only
@@ -125,7 +154,8 @@ func writeWaysForward(b *strings.Builder) {
 //
 // A response timeout is different. The request was sent and the editor may
 // still be showing the box, so Pogo stops. It does not open a desktop dialog
-// two minutes later. The error is EditorTimeoutError.
+// two minutes later. The error is PromptTimeoutError, the same error a
+// POGO_ASKPASS or desktop helper timeout returns.
 var errDisplay = errors.New("askpass could not open a display")
 
 type editorSkip struct{ reason string }
@@ -180,7 +210,7 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 	} else {
 		debug("using POGO_ASKPASS")
 		pass, err := runProgram(filepath.Base(path), []string{path, text}, modeAskpass)
-		if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
+		if finishedPrompt(err) {
 			return pass, err
 		}
 		if errors.Is(err, errNotStarted) {
@@ -194,12 +224,8 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 		note(skip)
 	} else {
 		pass, err := askEditor(sock, text, file)
-		if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
+		if finishedPrompt(err) {
 			return pass, err
-		}
-		var timed *EditorTimeoutError
-		if errors.As(err, &timed) {
-			return nil, err
 		}
 		var skipped *editorSkip
 		if errors.As(err, &skipped) {
@@ -225,7 +251,7 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 			continue
 		}
 		pass, err := runProgram(h.label, h.argv(text), modeDesktop)
-		if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
+		if finishedPrompt(err) {
 			return pass, err
 		}
 		if errors.Is(err, errDisplay) {
@@ -446,8 +472,13 @@ func runProgram(label string, argv []string, mode runMode) ([]byte, error) {
 	defer stderr.wipe()
 
 	if timedOut(ctx) {
-		// A helper we started may still be on screen. Stop, do not open another.
-		return nil, ErrCancelled
+		// The helper was started and may still be on screen. This is not a
+		// cancel: nobody answered. Stop, and do not open another dialog.
+		what := "POGO_ASKPASS"
+		if mode == modeDesktop {
+			what = label
+		}
+		return nil, &PromptTimeoutError{What: what, Wait: dialogTimeout()}
 	}
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) || isExecStartFailure(err) {

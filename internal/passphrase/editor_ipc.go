@@ -126,7 +126,7 @@ func askEditor(socketPath, prompt, file string) ([]byte, error) {
 			return nil, ErrTooLong
 		}
 		if isTimeoutErr(err) {
-			return nil, &EditorTimeoutError{Wait: dialogTimeout()}
+			return nil, &PromptTimeoutError{What: "editor", Wait: dialogTimeout()}
 		}
 		return nil, &editorSkip{reason: "editor prompt failed"}
 	}

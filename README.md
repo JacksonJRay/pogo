@@ -333,7 +333,7 @@ op read op://vault/pogo/passphrase | docker compose run -T --rm app
 
 ### Troubleshooting: no TTY
 
-When stdin is not a terminal and nothing on the machine can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`. It lists what was checked. Ways forward, in order: run it in a terminal; `docker run -it`; `--key-stdin` from a secret manager; `POGO_ASKPASS`; `--key-env` as a last resort. The last line tells an agent not to ask for the passphrase in chat. `POGO_DEBUG=1` prints `pogo: stdin is not a terminal` and the same checks. If the editor was asked and did not answer, the first line is `pogo: the editor prompt got no answer within the timeout`, and Pogo does not open another dialog.
+When stdin is not a terminal and nothing on the machine can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`. It lists what was checked. Ways forward, in order: run it in a terminal; `docker run -it`; `--key-stdin` from a secret manager; `POGO_ASKPASS`; `--key-env` as a last resort. The last line tells an agent not to ask for the passphrase in chat. `POGO_DEBUG=1` prints `pogo: stdin is not a terminal` and the same checks. If the editor was asked and did not answer, the first line is `pogo: the editor prompt got no answer within the timeout`, and Pogo does not open another dialog. `POGO_ASKPASS` and a desktop askpass use that same timeout wording (`pogo: the POGO_ASKPASS prompt got no answer within the timeout`, or the helper's name). A helper that exits non-zero, including Escape, still says the prompt was cancelled.
 
 ### systemd and Pogo on the host
 

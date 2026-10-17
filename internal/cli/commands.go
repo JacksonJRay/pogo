@@ -427,7 +427,7 @@ func explainPassphrase(err error) error {
 	if errors.As(err, &np) {
 		return np
 	}
-	var timed *passphrase.EditorTimeoutError
+	var timed *passphrase.PromptTimeoutError
 	if errors.As(err, &timed) {
 		return timed
 	}

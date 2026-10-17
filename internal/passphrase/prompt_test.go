@@ -676,6 +676,78 @@ func TestEditorResponseTimeoutDoesNotFallThrough(t *testing.T) {
 	}
 }
 
+func TestHelperTimeoutIsNotCancel(t *testing.T) {
+	dir := quietEnv(t)
+	t.Cleanup(SetPromptTimeoutsForTest(200*time.Millisecond, 300*time.Millisecond))
+	log := filepath.Join(dir, "called")
+	writeExec(t, dir, "ask.sh", "#!/bin/sh\n/bin/sleep 30\n")
+	writeExec(t, dir, "zenity", "#!/bin/sh\necho zenity >> "+log+"\nprintf '%s\\n' 'from-zenity'\n")
+	t.Setenv("POGO_ASKPASS", filepath.Join(dir, "ask.sh"))
+	t.Setenv("DISPLAY", ":1")
+	start := time.Now()
+	got, err := mustAcquire(t, Source{File: ".env.enc"})
+	if time.Since(start) > 4*time.Second {
+		t.Fatal("hung")
+	}
+	if got != nil {
+		t.Fatalf("passphrase returned %q", got)
+	}
+	var timed *PromptTimeoutError
+	if !errors.As(err, &timed) || timed.What != "POGO_ASKPASS" {
+		t.Fatalf("%v", err)
+	}
+	text := err.Error()
+	if !strings.Contains(text, "pogo: the POGO_ASKPASS prompt got no answer within the timeout") || !strings.Contains(text, "Ways forward, in order:") || !strings.Contains(text, AgentLine) {
+		t.Fatalf("%s", text)
+	}
+	if strings.Contains(text, "cancelled") || strings.Contains(text, NoPromptSummary) {
+		t.Fatalf("%s", text)
+	}
+	if _, statErr := os.Stat(log); !os.IsNotExist(statErr) {
+		t.Fatal("desktop helper ran after POGO_ASKPASS timed out")
+	}
+
+	t.Setenv("POGO_ASKPASS", "")
+	writeExec(t, dir, "ssh-askpass", "#!/bin/sh\necho ssh >> "+log+"\n/bin/sleep 30\n")
+	start = time.Now()
+	got, err = mustAcquire(t, Source{})
+	if time.Since(start) > 4*time.Second {
+		t.Fatal("hung")
+	}
+	if got != nil {
+		t.Fatalf("desktop passphrase %q", got)
+	}
+	timed = nil
+	if !errors.As(err, &timed) || timed.What != "ssh-askpass" {
+		t.Fatalf("%v", err)
+	}
+	text = err.Error()
+	if !strings.Contains(text, "pogo: the ssh-askpass prompt got no answer within the timeout") || !strings.Contains(text, "Ways forward, in order:") || !strings.Contains(text, AgentLine) {
+		t.Fatalf("%s", text)
+	}
+	if strings.Contains(text, "cancelled") {
+		t.Fatalf("%s", text)
+	}
+	which, _ := os.ReadFile(log)
+	if bytes.Contains(which, []byte("zenity")) {
+		t.Fatalf("timeout fell through: %s", which)
+	}
+
+	os.Remove(log)
+	writeExec(t, dir, "ssh-askpass", "#!/bin/sh\necho ssh >> "+log+"\nexit 1\n")
+	got, err = mustAcquire(t, Source{})
+	if !errors.Is(err, ErrCancelled) || got != nil {
+		t.Fatalf("cancel %q %v", got, err)
+	}
+	if strings.Contains(err.Error(), "got no answer") {
+		t.Fatalf("cancel looked like a timeout: %v", err)
+	}
+	which, _ = os.ReadFile(log)
+	if bytes.Contains(which, []byte("zenity")) {
+		t.Fatalf("cancel fell through: %s", which)
+	}
+}
+
 func TestDisplaySocketRequired(t *testing.T) {
 	dir := quietEnv(t)
 	log := filepath.Join(dir, "called")
