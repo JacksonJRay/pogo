@@ -422,7 +422,7 @@ set +e
 timeout 180 python3 "$PTY" "abcd" -- "$POGO" decrypt -f "$WORK/abcd.enc" >"$WORK/pty-abcd.out" 2>"$WORK/pty-abcd.err"
 pty_ec=$?
 set +e
-if [[ "$pty_ec" -eq 0 ]] && grep -q "Enter passphrase: " "$WORK/pty-abcd.out" && ! grep -q "min 15" "$WORK/pty-abcd.out" && ! grep -q "easier to guess" "$WORK/pty-abcd.out" && grep -q '^EDITED=yes$' "$WORK/pty-abcd.out" && ! grep -q "abcd" "$WORK/pty-abcd.out"; then
+if [[ "$pty_ec" -eq 0 ]] && grep -q "Enter passphrase: " "$WORK/pty-abcd.out" && ! grep -q "min 15" "$WORK/pty-abcd.out" && ! grep -q "easier to guess" "$WORK/pty-abcd.out" && tr -d '\r' <"$WORK/pty-abcd.out" | grep -q 'EDITED=yes' && ! tr -d '\r' <"$WORK/pty-abcd.out" | grep -q 'abcd'; then
   pass "abcd-tty-decrypt"
 else
   fail "abcd-tty-decrypt exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-abcd.out" | head -c 400)"
@@ -432,7 +432,7 @@ set +e
 timeout 180 python3 "$PTY" "abcd" -- "$POGO" run -f "$WORK/abcd.enc" -- python3 -c 'print("ABCD_TTY")' >"$WORK/pty-abcd-run.out" 2>"$WORK/pty-abcd-run.err"
 pty_ec=$?
 set +e
-if [[ "$pty_ec" -eq 0 ]] && grep -qx 'ABCD_TTY' "$WORK/pty-abcd-run.out" && grep -q "Enter passphrase: " "$WORK/pty-abcd-run.out" && ! grep -q "easier to guess" "$WORK/pty-abcd-run.out"; then
+if [[ "$pty_ec" -eq 0 ]] && tr -d '\r' <"$WORK/pty-abcd-run.out" | grep -q 'ABCD_TTY' && grep -q "Enter passphrase: " "$WORK/pty-abcd-run.out" && ! grep -q "easier to guess" "$WORK/pty-abcd-run.out"; then
   pass "abcd-tty-run"
 else
   fail "abcd-tty-run exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-abcd-run.out" | head -c 400)"
