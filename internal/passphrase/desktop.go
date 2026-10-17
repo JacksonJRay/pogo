@@ -8,11 +8,11 @@ import (
 )
 
 // Desktop helpers are probed by executable name. Distro identity is not read
-// from /etc/os-release. PATH is searched first, which is how NixOS, Alpine,
+// from a release file. PATH is searched first, which is how NixOS, Alpine,
 // Void, and Gentoo expose these programs. The extra directories cover
 // Debian, Ubuntu, Pop!_OS, Fedora, RHEL, Rocky, Alma, Arch, and openSUSE
 // libexec layouts, plus /usr/bin and the NixOS profile path when PATH was
-// emptied. Nothing is installed and pkexec is never called.
+// emptied. Nothing is installed and no privilege helper is called.
 //
 // GNOME, ubuntu, and pop prefer the gcr family. KDE prefers ksshaskpass,
 // then kdialog. An unknown desktop uses the first askpass-protocol binary,

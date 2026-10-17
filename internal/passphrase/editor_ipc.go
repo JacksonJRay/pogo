@@ -153,7 +153,7 @@ func editorPayload(placeholder, token string) ([]byte, error) {
 		Argv        []string `json:"argv"`
 	}{
 		AskpassType: "https",
-		// askpass.sh word-splits the Git prompt, so the workbench reads
+		// The editor helper word-splits the Git prompt, so the workbench reads
 		// the placeholder from argv[2] and the URL from argv[4].
 		Argv: []string{"pogo", "askpass", placeholder, "for", editorHost},
 	})

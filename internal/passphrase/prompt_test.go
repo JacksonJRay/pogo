@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func quietEnv(t *testing.T) string {
@@ -116,7 +118,8 @@ func TestAskpassStdoutAndWhitespace(t *testing.T) {
 func TestAskpassConfirmMismatchAndMatch(t *testing.T) {
 	dir := quietEnv(t)
 	count := filepath.Join(dir, "n")
-	writeExec(t, dir, "ask.sh", "#!/bin/sh\nn=$(cat "+count+" 2>/dev/null || echo 0)\nn=$((n+1))\nprintf '%s' \"$n\" > "+count+"\nif [ \"$n\" = 1 ]; then printf '%s\\n' first-passphrase-aaa; else printf '%s\\n' second-passphrase-bb; fi\n")
+	// PATH is only the temp dir, so the helper uses shell builtins.
+	writeExec(t, dir, "ask.sh", "#!/bin/sh\nn=0\n[ -f "+count+" ] && read n < "+count+"\nn=$((n+1))\nprintf '%s' \"$n\" > "+count+"\nif [ \"$n\" = 1 ]; then printf '%s\\n' first-passphrase-aaa; else printf '%s\\n' second-passphrase-bb; fi\n")
 	t.Setenv("POGO_ASKPASS", filepath.Join(dir, "ask.sh"))
 	got, err := AcquireConfirmed(Source{Prompt: "Enter passphrase: ", File: ".env.enc"}, "Enter passphrase: ", "Enter it again to confirm: ")
 	if !errors.Is(err, ErrMismatch) || got != nil {
@@ -148,7 +151,7 @@ func TestAskpassFailuresWipe(t *testing.T) {
 		t.Fatalf("empty %q %v", got, err)
 	}
 
-	writeExec(t, dir, "ask.sh", "#!/bin/sh\ndd if=/dev/zero bs=5000 count=1 2>/dev/null | tr '\\0' a\n")
+	writeExec(t, dir, "ask.sh", "#!/bin/sh\nprintf '%s\\n' '"+strings.Repeat("a", MaxBytes+2)+"'\n")
 	got, err = mustAcquire(t, Source{})
 	if !errors.Is(err, ErrTooLong) || got != nil {
 		t.Fatalf("long %q %v", got, err)
@@ -289,12 +292,18 @@ func TestNoBackendAndEnvironments(t *testing.T) {
 		{
 			name: "refused socket",
 			setup: func(t *testing.T, dir string) {
+				// Closing a net.Listener unlinks the socket, which is "not
+				// found". Bind without listen so the file stays and dial
+				// returns connection refused.
 				sock := filepath.Join(dir, "dead.sock")
-				ln, err := net.Listen("unix", sock)
+				fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ln.Close()
+				t.Cleanup(func() { unix.Close(fd) })
+				if err := unix.Bind(fd, &unix.SockaddrUnix{Name: sock}); err != nil {
+					t.Fatal(err)
+				}
 				t.Setenv("VSCODE_GIT_IPC_HANDLE", sock)
 			},
 			want: []string{"editor socket connection refused"},
@@ -448,7 +457,10 @@ func TestDesktopPreferenceAndCancel(t *testing.T) {
 	}
 
 	// Unknown desktop: askpass protocol before zenity. Display failure falls
-	// through; a plain non-zero exit is cancel and stops.
+	// through; a plain non-zero exit is cancel and stops. Remove the helpers
+	// the earlier cases left on PATH so ssh-askpass is the first match.
+	os.Remove(filepath.Join(dir, "gcr4-ssh-askpass"))
+	os.Remove(filepath.Join(dir, "ksshaskpass"))
 	os.Remove(log)
 	writeExec(t, dir, "ssh-askpass", "#!/bin/sh\necho ssh >> "+log+"\necho 'cannot open display: :1' >&2\nexit 1\n")
 	writeExec(t, dir, "zenity", "#!/bin/sh\necho zenity >> "+log+"\nprintf '%s\\n' 'from-zenity'\n")

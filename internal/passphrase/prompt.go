@@ -314,13 +314,29 @@ func runProgram(label string, argv []string, mode runMode) ([]byte, error) {
 }
 
 func isExecStartFailure(err error) bool {
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		code := ee.ExitCode()
-		return code == 126 || code == 127
+	if err == nil {
+		return false
+	}
+	// A process that started and then exited, including exit 126 or 127 from
+	// the helper itself, is a finished prompt. Only a failure to exec falls
+	// through. The SSH_ASKPASS contract treats any other non-zero exit as cancel.
+	var exited *exec.ExitError
+	if errors.As(err, &exited) {
+		return false
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return true
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return true
+	}
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		return true
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "executable file not found") || strings.Contains(msg, "permission denied") || strings.Contains(msg, "not a directory")
+	return strings.Contains(msg, "executable file not found") || strings.Contains(msg, "permission denied") || strings.Contains(msg, "not a directory") || strings.Contains(msg, "exec format error")
 }
 
 func decodePassphrase(buf []byte) ([]byte, error) {
