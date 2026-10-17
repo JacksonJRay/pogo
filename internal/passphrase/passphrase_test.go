@@ -33,6 +33,19 @@ func TestCheckLength(t *testing.T) {
 	}
 }
 
+func TestIsBlank(t *testing.T) {
+	for _, pass := range []string{"", " ", "   ", "\t\r\n", " \u00a0 "} {
+		if !IsBlank([]byte(pass)) {
+			t.Fatalf("expected blank %q", pass)
+		}
+	}
+	for _, pass := range []string{"a", " short ", "pogo-test-passphrase"} {
+		if IsBlank([]byte(pass)) {
+			t.Fatalf("expected non-blank %q", pass)
+		}
+	}
+}
+
 func TestMatch(t *testing.T) {
 	if !Match([]byte("abc"), []byte("abc")) {
 		t.Fatal("equal")

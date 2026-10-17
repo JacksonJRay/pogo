@@ -253,6 +253,69 @@ expect_code "rekey-old-fails" 2 "$POGO" decrypt -f "$WORK/app.enc" --key-env POG
 expect_code "rekey-new-works" 0 "$POGO" decrypt -f "$WORK/app.enc" --key-env POGO_PASSPHRASE_V2 || true
 expect_code "rekey-back" 0 "$POGO" rekey -f "$WORK/app.enc" --key-env POGO_PASSPHRASE_V2 --new-key-env POGO_PASSPHRASE || true
 
+expect_code "long-file-unaffected" 0 "$POGO" decrypt -f "$WORK/app.enc" --key-env POGO_PASSPHRASE || true
+if grep -q '^EDITED=yes$' "$WORK/out" && grep -q '^API_KEY=' "$WORK/out" && ! grep -q "easier to guess" "$WORK/out"; then
+  pass "long-file-unaffected-bytes"
+else
+  fail "long-file-unaffected-bytes"
+fi
+expect_code "short-against-long-without-flag" 4 env POGO_SHORT=short "$POGO" decrypt -f "$WORK/app.enc" --key-env POGO_SHORT || true
+expect_code "short-against-long-with-flag" 2 env POGO_SHORT=short "$POGO" decrypt -f "$WORK/app.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+require_text "short-against-long-decrypt-failed" "$WORK/err" "Decryption failed" "short passphrases are much easier to guess"
+if grep -q "easier to guess" "$WORK/out"; then
+  fail "short-against-long warning on stdout"
+else
+  pass "short-against-long-stdout-clean"
+fi
+
+expect_code "allow-short-empty" 4 env POGO_EMPTY= "$POGO" init -f "$WORK/empty.enc" --key-env POGO_EMPTY --allow-short-passphrase || true
+require_text "allow-short-empty-message" "$WORK/err" "empty or only whitespace"
+expect_code "allow-short-blank" 4 env POGO_BLANK='   ' "$POGO" init -f "$WORK/blank.enc" --key-env POGO_BLANK --allow-short-passphrase || true
+require_text "allow-short-blank-message" "$WORK/err" "empty or only whitespace"
+expect_code "allow-short-init" 3 env POGO_SHORT=short EDITOR=false "$POGO" init -f "$WORK/short-init.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+require_text "allow-short-init-warning" "$WORK/err" "short passphrases are much easier to guess"
+if grep -q "easier to guess" "$WORK/out"; then
+  fail "allow-short-init warning on stdout"
+else
+  pass "allow-short-init-stdout-clean"
+fi
+
+expect_code "allow-short-convert" 0 env POGO_SHORT=short "$POGO" convert "$WORK/plain.env" -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+require_text "allow-short-convert-warning" "$WORK/err" "short passphrases are much easier to guess"
+if grep -q "easier to guess" "$WORK/out"; then
+  fail "allow-short-convert warning on stdout"
+else
+  pass "allow-short-convert-stdout-clean"
+fi
+expect_code "short-file-without-flag" 4 env POGO_SHORT=short "$POGO" decrypt -f "$WORK/short.enc" --key-env POGO_SHORT || true
+expect_code "short-file-with-flag" 0 env POGO_SHORT=short "$POGO" decrypt -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+if ! cmp -s "$WORK/out" "$WORK/plain.env"; then
+  fail "allow-short-decrypt-roundtrip"
+else
+  pass "allow-short-decrypt-roundtrip"
+fi
+if grep -q "easier to guess" "$WORK/out"; then
+  fail "allow-short-decrypt warning on stdout"
+else
+  pass "allow-short-decrypt-stdout-clean"
+fi
+set +e
+env POGO_SHORT=short "$POGO" run -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase -- python3 -c 'print("CHILD_OK")' >"$WORK/short-run.out" 2>"$WORK/short-run.err"
+short_run_ec=$?
+set +e
+if [[ "$short_run_ec" -eq 0 ]] && grep -qx 'CHILD_OK' "$WORK/short-run.out" && ! grep -q 'easier to guess' "$WORK/short-run.out" && grep -q 'short passphrases are much easier to guess' "$WORK/short-run.err"; then
+  pass "allow-short-run-stdout-clean"
+else
+  fail "allow-short-run-stdout-clean exit $short_run_ec out $(tr '\n' ' ' <"$WORK/short-run.out" | head -c 200) err $(tr '\n' ' ' <"$WORK/short-run.err" | head -c 300)"
+fi
+expect_code "allow-short-rekey" 0 env POGO_SHORT=short POGO_TINY=tiny "$POGO" rekey -f "$WORK/short.enc" --key-env POGO_SHORT --new-key-env POGO_TINY --allow-short-passphrase || true
+expect_code "allow-short-rekey-old" 2 env POGO_SHORT=short "$POGO" decrypt -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+expect_code "allow-short-rekey-new-needs-flag" 4 env POGO_TINY=tiny "$POGO" decrypt -f "$WORK/short.enc" --key-env POGO_TINY || true
+expect_code "allow-short-rekey-new" 0 env POGO_TINY=tiny "$POGO" decrypt -f "$WORK/short.enc" --key-env POGO_TINY --allow-short-passphrase || true
+expect_code "min-length-4" 0 env POGO_FOUR=abcd "$POGO" convert "$WORK/plain.env" -f "$WORK/min4.enc" --key-env POGO_FOUR --min-length 4 || true
+require_text "min-length-4-warning" "$WORK/err" "below the recommended"
+expect_code "min-length-4-open" 0 env POGO_FOUR=abcd "$POGO" decrypt -f "$WORK/min4.enc" --key-env POGO_FOUR --min-length 4 || true
+
 expect_code "key-file-removed" 1 "$POGO" run -f "$WORK/app.enc" --key-file "$WORK/removed" -- true || true
 require_text "key-file-removed-message" "$WORK/err" "removed on purpose" "--key-stdin"
 expect_code "new-key-file-removed" 1 "$POGO" rekey -f "$WORK/app.enc" --new-key-file "$WORK/removed" || true
@@ -283,6 +346,16 @@ if [[ "$pty_ec" -eq 4 ]] && grep -q "too short" "$WORK/pty-short.out"; then
   pass "key-stdin-tty-short"
 else
   fail "key-stdin-tty-short exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-short.out" | head -c 300)"
+fi
+
+set +e
+timeout 180 python3 "$PTY" "short-pass" "short-pass" -- "$POGO" convert "$WORK/plain.env" -f "$WORK/pty-short.enc" --allow-short-passphrase >"$WORK/pty-allow.out" 2>"$WORK/pty-allow.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && grep -q "Enter passphrase: " "$WORK/pty-allow.out" && grep -q "short passphrases are much easier to guess" "$WORK/pty-allow.out" && ! grep -q "short-pass" "$WORK/pty-allow.out"; then
+  pass "allow-short-pty"
+else
+  fail "allow-short-pty exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-allow.out" | head -c 400) $(tr '\n' ' ' <"$WORK/pty-allow.err" | head -c 200)"
 fi
 
 set +e

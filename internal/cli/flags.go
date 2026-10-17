@@ -23,18 +23,19 @@ var valueFlags = map[string]bool{
 
 var boolFlags = map[string]bool{
 	"--key-stdin": true, "--force": true, "--no-override": true, "--list": true,
-	"-h": true, "--help": true, "-V": true, "--version": true,
+	"--allow-short-passphrase": true,
+	"-h":                       true, "--help": true, "-V": true, "--version": true,
 }
 
 // flags a command accepts, besides the universal help flags.
 var commandFlags = map[string][]string{
-	"init":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--force"},
-	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length"},
-	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--env", "--no-override"},
-	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--force"},
-	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--env", "--force"},
-	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--force"},
-	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--new-key-env"},
+	"init":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
+	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase"},
+	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--env", "--no-override"},
+	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
+	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--env", "--force"},
+	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
+	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--new-key-env"},
 	"skill":   {"--list", "--framework"},
 	"help":    {},
 	"version": {},
@@ -48,6 +49,7 @@ type options struct {
 	keyStdin    bool
 	minLength   int
 	minSet      bool
+	allowShort  bool
 	envName     string
 	envSet      bool
 	force       bool
@@ -271,6 +273,8 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 			}
 			opts.minLength = n
 			opts.minSet = true
+		case "--allow-short-passphrase":
+			opts.allowShort = true
 		case "--env":
 			opts.envName = val
 			opts.envSet = true

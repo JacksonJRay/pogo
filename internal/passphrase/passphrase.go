@@ -33,6 +33,10 @@ const (
 var (
 	// ErrTooShort is mapped to exit code 4.
 	ErrTooShort = errors.New("passphrase too short")
+	// ErrBlank means the passphrase is empty or only whitespace.
+	// Callers map it to exit code 4. Skipping the 15-character minimum
+	// does not allow a blank passphrase.
+	ErrBlank = errors.New("passphrase is empty or only whitespace")
 	// ErrTooLong means the passphrase exceeded MaxBytes.
 	ErrTooLong = errors.New("passphrase too long")
 	// ErrMismatch means the two interactive entries differed.
@@ -70,6 +74,12 @@ func CheckLength(pass []byte, min int) error {
 // Length returns the number of Unicode characters.
 func Length(pass []byte) int {
 	return utf8.RuneCount(pass)
+}
+
+// IsBlank reports whether pass is empty or only Unicode whitespace.
+// A passphrase is still required when the 15-character minimum is skipped.
+func IsBlank(pass []byte) bool {
+	return len(bytes.TrimSpace(pass)) == 0
 }
 
 // Acquire reads one passphrase.

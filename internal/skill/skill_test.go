@@ -16,6 +16,8 @@ func TestAgentRules(t *testing.T) {
 		"`bash -lc` can reset `PATH`",
 		"/usr/local/bin",
 		"Never pass `--key-file` or `--new-key-file`",
+		"Do not pass `--allow-short-passphrase` unless the user explicitly asks",
+		"printf '%s' \"$SHORT_PASS\" | pogo convert .env --key-stdin --allow-short-passphrase",
 	} {
 		if !bytes.Contains(Document, []byte(phrase)) {
 			t.Errorf("skill rules missing %q", phrase)
