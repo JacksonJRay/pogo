@@ -73,6 +73,7 @@ not a dynamic executable
 | `pogo help [command]` | Help. Same as `pogo <command> --help` and `pogo <command> -h` |
 | `pogo version` | Print the version. Same as `pogo -V` and `pogo --version` |
 | `pogo docker` | Print the Docker guide. Same as `pogo help docker`. Does not start a container |
+| `pogo doctor` | Report which passphrase prompt would be used, without asking |
 
 The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every command. A path typed after the command sets the same thing. If both are given and they differ, Pogo exits 1. For `decrypt`, one extra path is the plaintext output, and `-f` is the encrypted input.
 
@@ -92,7 +93,19 @@ The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every comma
 | `--framework NAME` | none | On `skill`, print one framework section |
 | `-h`, `--help` |  | Help, exit 0 |
 
-Use only one of `--key-env` and `--key-stdin`. If you pass neither, Pogo asks in the terminal. Confirmation (typing the passphrase twice) happens only for that prompt. `--key-file` and `--new-key-file` were removed: Pogo exits 1 and tells you to type the passphrase or use `--key-stdin`. A file that can decrypt the env file would be another secret stored on the system.
+Use only one of `--key-env` and `--key-stdin`. If you pass neither and stdin is a terminal, Pogo asks in the terminal and waits until you type or press Ctrl-C. Set `POGO_TTY_TIMEOUT` to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. Confirmation (typing the passphrase twice) happens for that prompt and for the out-of-band prompts below. `--key-env` and `--key-stdin` are still read once. `--key-file` and `--new-key-file` were removed: Pogo exits 1 and tells you to type the passphrase or use `--key-stdin`. A file that can decrypt the env file would be another secret stored on the system.
+
+When stdin is not a terminal, Pogo asks through a prompt that is already on the machine. It stops at the first one that can show a dialog:
+
+1. `POGO_ASKPASS`, if set. Same contract as `SSH_ASKPASS`: the prompt text is the argument, one line on stdout is the passphrase, exit 0 submits, any other exit cancels.
+2. The editor Git prompt, when `VSCODE_GIT_IPC_HANDLE` is a live socket. code-server, VS Code, and Cursor inject this into integrated terminals, including Remote SSH and code-server behind a reverse proxy. A Flatpak or Snap editor whose socket path is not visible is looked up under `XDG_RUNTIME_DIR`. Stderr says `Pogo is asking for the .env.enc passphrase in the editor (box at the top of the window).` code-server and VS Code show that full prompt as the placeholder. Cursor uses its own box, titled from a fake host such as `pogo-passphrase-for-.env.enc.invalid` (the username, if shown, is `pogo-passphrase`). That host ends in `.invalid`, so it does not resolve and it is not a Git login. If the editor accepts the request and does not answer, Pogo waits and then exits 1 with `pogo: the editor prompt got no answer within the timeout`. It does not open a second dialog. A missing socket or a refused connection still falls through. `POGO_PROMPT_TIMEOUT` is a number of seconds for this wait and for `POGO_ASKPASS` and desktop dialogs. Unset, the wait is two minutes.
+3. A desktop askpass already installed, and only when a display is actually there. A local `DISPLAY` of `:N` or `unix:N` is used only when `/tmp/.X11-unix/XN` exists. A `WAYLAND_DISPLAY` name is used only when that socket exists under `XDG_RUNTIME_DIR`, or when it is an absolute path that exists. TCP displays such as `localhost:10.0` (SSH forwarding) are not checked that way. If the variable is set and the local socket is missing, the check line is `display set but no X server socket`. PATH is searched first (NixOS, Alpine, Void, Gentoo), then the usual libexec paths (Debian, Ubuntu, Pop!_OS, Fedora, RHEL, Arch, openSUSE). `gcr4-ssh-askpass` and `gcr-ssh-askpass` only relay to GNOME's prompter, so Pogo uses them when `GCR_SSH_ASKPASS_SOCKET` is a socket and otherwise tries the next helper (zenity, kdialog, or another askpass). An SSH session or WSL without WSLg has no display, so this step is skipped. Pogo does not install packages, call `pkexec`, use `systemd-ask-password`, or run the editor's `askpass.sh`.
+
+`pogo doctor` prints which of those would be used and does not ask. Exit 0 means a prompt is available. Exit 1 means it is not. `POGO_DEBUG=1` prints the same decisions on stderr while a command runs. It never prints the passphrase.
+
+An agent runs `pogo doctor`, then `pogo run -- <command>` with no key flags, and tells the person to watch for the prompt. It does not collect the passphrase. If doctor exits 1, the person runs the command in their own terminal, or pipes a secret manager into `--key-stdin`. `--key-env` is a last resort: the value stays visible in `/proc` and `docker inspect`.
+
+If nothing can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`.
 
 ```text
 Enter passphrase (min 15 characters):
@@ -320,14 +333,7 @@ op read op://vault/pogo/passphrase | docker compose run -T --rm app
 
 ### Troubleshooting: no TTY
 
-When stdin is not a terminal and you did not pass `--key-stdin` or `--key-env`, Pogo exits 1 and prints:
-
-```text
-no passphrase was provided, and stdin is not a terminal so Pogo cannot ask for one.
-If this is Docker, add -it (docker run -it), or use docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.
-Or pass the passphrase with --key-stdin (docker run -i, or docker compose run -T; the program cannot also read stdin) or --key-env NAME.
-Pogo does not read a passphrase from a file.
-```
+When stdin is not a terminal and nothing on the machine can ask, Pogo exits 1. The first line is `pogo: no way to ask for the passphrase here`. It lists what was checked. Ways forward, in order: run it in a terminal; `docker run -it`; `--key-stdin` from a secret manager; `POGO_ASKPASS`; `--key-env` as a last resort. The last line tells an agent not to ask for the passphrase in chat. `POGO_DEBUG=1` prints `pogo: stdin is not a terminal` and the same checks. If the editor was asked and did not answer, the first line is `pogo: the editor prompt got no answer within the timeout`, and Pogo does not open another dialog. `POGO_ASKPASS` and a desktop askpass use that same timeout wording (`pogo: the POGO_ASKPASS prompt got no answer within the timeout`, or the helper's name). A helper that exits non-zero, including Escape, still says the prompt was cancelled.
 
 ### systemd and Pogo on the host
 

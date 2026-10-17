@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"pogo/internal/dotenv"
@@ -47,6 +48,8 @@ func dispatch(cmd string, opts options) (int, error) {
 		return cmdSkill(opts)
 	case "docker":
 		return cmdDocker(opts)
+	case "doctor":
+		return cmdDoctor(opts)
 	default:
 		return 1, unknownCommand(cmd)
 	}
@@ -73,7 +76,7 @@ func cmdInit(opts options) (int, error) {
 	if ok && !opts.force {
 		return 1, refuseOverwrite(enc)
 	}
-	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt())
+	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt(), enc)
 	if err != nil {
 		return code, err
 	}
@@ -102,7 +105,7 @@ func cmdEdit(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	pass, code, err := acquire(opts, true, false, openPrompt(), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "", enc)
 	if err != nil {
 		return code, err
 	}
@@ -146,7 +149,7 @@ func cmdRun(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	pass, code, err := acquire(opts, true, false, openPrompt(), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "", enc)
 	if err != nil {
 		return code, err
 	}
@@ -224,7 +227,7 @@ func encryptLike(opts options, convert bool) (int, error) {
 		return 1, err
 	}
 	defer securemem.Wipe(data)
-	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt())
+	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt(), enc)
 	if err != nil {
 		return code, err
 	}
@@ -261,7 +264,7 @@ func cmdDecrypt(opts options) (int, error) {
 			return 1, refuseOverwrite(outfile)
 		}
 	}
-	pass, code, err := acquire(opts, true, false, openPrompt(), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "", enc)
 	if err != nil {
 		return code, err
 	}
@@ -312,7 +315,7 @@ func cmdRekey(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	oldPass, code, err := acquire(opts, true, false, "Enter the current passphrase: ", "")
+	oldPass, code, err := acquire(opts, true, false, "Enter the current passphrase: ", "", enc)
 	if err != nil {
 		return code, err
 	}
@@ -331,7 +334,7 @@ func cmdRekey(opts options) (int, error) {
 	// The new passphrase is a create. Warn here, after the file has opened,
 	// so a failed open does not print the short-passphrase warning.
 	warnShort(newOpts)
-	newPass, code, err := acquire(newOpts, false, true, newPassPrompt(newOpts), newConfirmPrompt())
+	newPass, code, err := acquire(newOpts, false, true, newPassPrompt(newOpts), newConfirmPrompt(), enc)
 	if err != nil {
 		return code, err
 	}
@@ -341,6 +344,21 @@ func cmdRekey(opts options) (int, error) {
 	}
 	fmt.Fprintf(os.Stderr, "Updated the passphrase for %s\nThe previous passphrase will no longer open this file.\n", enc)
 	return 0, nil
+}
+
+func cmdDoctor(opts options) (int, error) {
+	if len(opts.positionals) > 0 || opts.hasDD {
+		return 1, fmt.Errorf("pogo doctor takes no arguments.\nRun `pogo doctor` or `pogo help doctor`.")
+	}
+	d := passphrase.Diagnose()
+	fmt.Fprint(os.Stdout, d.Report())
+	if !strings.HasSuffix(d.Report(), "\n") {
+		fmt.Fprintln(os.Stdout)
+	}
+	if d.Available {
+		return 0, nil
+	}
+	return 1, nil
 }
 
 func cmdSkill(opts options) (int, error) {
@@ -379,11 +397,12 @@ func cmdSkill(opts options) (int, error) {
 // for rekey. That path rejects only an empty passphrase. Creating a passphrase
 // (init, encrypt, convert, and rekey's new passphrase) keeps the 15-character
 // minimum unless --allow-short-passphrase is set.
-func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt string) ([]byte, int, error) {
+func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt, encPath string) ([]byte, int, error) {
 	src := passphrase.Source{
 		Env:    opts.keyEnv,
 		Stdin:  opts.keyStdin,
 		Prompt: prompt,
+		File:   filepath.Base(encPath),
 	}
 	var (
 		pass []byte
@@ -395,18 +414,36 @@ func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt str
 		pass, err = passphrase.Acquire(src)
 	}
 	if err != nil {
-		if errors.Is(err, passphrase.ErrMismatch) {
-			return nil, 1, fmt.Errorf("The two passphrases did not match.\nRun the command again and enter the same passphrase both times.")
-		}
-		if strings.Contains(err.Error(), "not a terminal") {
-			return nil, 1, fmt.Errorf("%s.\nIf this is Docker, add -it (docker run -it), or use docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.\nOr pass the passphrase with --key-stdin (docker run -i, or docker compose run -T; the program cannot also read stdin) or --key-env NAME.\nPogo does not read a passphrase from a file.", err.Error())
-		}
-		return nil, 1, err
+		return nil, 1, explainPassphrase(err)
 	}
 	if opening {
 		return checkOpenPassphrase(pass)
 	}
 	return checkCreatePassphrase(opts, pass)
+}
+
+func explainPassphrase(err error) error {
+	var np *passphrase.NoPromptError
+	if errors.As(err, &np) {
+		return np
+	}
+	var timed *passphrase.PromptTimeoutError
+	if errors.As(err, &timed) {
+		return timed
+	}
+	if errors.Is(err, passphrase.ErrCancelled) {
+		return fmt.Errorf("The passphrase prompt was cancelled.\nRun the command again when you can answer the prompt.")
+	}
+	if errors.Is(err, passphrase.ErrMismatch) {
+		return fmt.Errorf("The two passphrases did not match.\nRun the command again and enter the same passphrase both times.")
+	}
+	if errors.Is(err, passphrase.ErrTooLong) {
+		return fmt.Errorf("Passphrase is longer than %d bytes.\nUse a shorter passphrase.", passphrase.MaxBytes)
+	}
+	if strings.Contains(err.Error(), "not a terminal") {
+		return fmt.Errorf("%s.\nIf this is Docker, add -it (docker run -it), or use docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.\nOr pass the passphrase with --key-stdin (docker run -i, or docker compose run -T; the program cannot also read stdin) or --key-env NAME.\nPogo does not read a passphrase from a file.", err.Error())
+	}
+	return err
 }
 
 func checkOpenPassphrase(pass []byte) ([]byte, int, error) {

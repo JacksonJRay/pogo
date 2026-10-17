@@ -368,8 +368,9 @@ EOF
     pogo-entrypoint-alpine:e2e >"$WORK/recipe-notty.out" 2>"$WORK/recipe-notty.err"
   local nt=$?
   set +e
-  if [[ "$nt" -eq 1 ]] && grep -q 'not a terminal' "$WORK/recipe-notty.err" \
-    && grep -q -- '-it' "$WORK/recipe-notty.err" && grep -q -- '--key-stdin' "$WORK/recipe-notty.err"; then
+  if [[ "$nt" -eq 1 ]] && grep -q 'no way to ask for the passphrase' "$WORK/recipe-notty.err" \
+    && grep -q -- '-it' "$WORK/recipe-notty.err" && grep -q -- '--key-stdin' "$WORK/recipe-notty.err" \
+    && grep -q 'If you are an AI agent:' "$WORK/recipe-notty.err"; then
     pass "docker-recipe-notty"
   else
     fail "docker-recipe-notty exit=$nt $(tr '\n' ' ' <"$WORK/recipe-notty.err" | head -c 300)"

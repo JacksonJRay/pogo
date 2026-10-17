@@ -20,6 +20,7 @@ Words used below:
 | `pogo skill` | Print this document |
 | `pogo help [command]` | Show help. Same as `pogo <command> --help` and `pogo <command> -h` |
 | `pogo version` | Print the version |
+| `pogo doctor` | Report which passphrase prompt would be used, without asking |
 
 Flags on every command:
 
@@ -62,7 +63,11 @@ Use one method only. If you pass more than one of `--key-env` and `--key-stdin`,
 | A pipe, password manager, or `read -rs` | `--key-stdin` | Prefer this. Stdin is consumed. The program sees end-of-file. Not shown by `docker inspect` |
 | `--key-stdin` and stdin is a terminal | Prompt, echo off, one line | Same as the interactive prompt. The program keeps the terminal. You do not press Ctrl-D |
 | A process already has the variable | `--key-env POGO_KEY` | Last resort. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. Pogo removes it from the child |
-| An agent or script | `--key-stdin` | Prefer this over `--key-env`. `bash -lc` can reset `PATH`: install pogo to `/usr/local/bin` or call it by absolute path |
+| An agent, stdin is not a terminal | `pogo doctor`, then `pogo run -- <command>` with no key flags | Doctor exits 0 when a prompt already on the machine can ask. Tell the person to watch for it. Do not collect the passphrase in chat |
+| Doctor exits 1, or no prompt | A terminal, or `--key-stdin` from a secret manager | The error starts with `pogo: no way to ask for the passphrase here`. Ask the person to run the command in their own terminal. `--key-env` is a last resort |
+| Editor box in Cursor | The passphrase for the file in the title | The box may say "Sign in" and "Password or personal access token". The host is `pogo-passphrase-for-<file>.invalid`. Do not enter a Git password or a token |
+| Editor asked, no answer | Stop | The error starts with `pogo: the editor prompt got no answer within the timeout`. Pogo does not open a second dialog. `POGO_PROMPT_TIMEOUT` is seconds for that wait |
+| An agent or script that already has a pipe | `--key-stdin` | Prefer this over `--key-env`. `bash -lc` can reset `PATH`: install pogo to `/usr/local/bin` or call it by absolute path |
 
 Interactive prompts when creating a passphrase:
 

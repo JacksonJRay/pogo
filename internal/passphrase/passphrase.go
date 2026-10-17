@@ -1,11 +1,14 @@
 // Package passphrase reads a passphrase and checks its length.
 //
-// Interactive entry uses a terminal with echo disabled. An environment
-// variable is the other non-interactive source. Stdin is a pipe or a
-// terminal: a pipe is read until EOF and trimmed, and a terminal prompts
-// on stderr, turns echo off, and reads one line, the same as the interactive
-// prompt. Pogo does not read a passphrase from a file. Confirmation (typing
-// the passphrase twice) happens only for interactive entry.
+// Interactive entry uses a terminal with echo disabled. When stdin is not a
+// terminal and no key flag is set, Pogo asks through a prompt already on the
+// machine (POGO_ASKPASS, the editor Git prompt, then a desktop askpass).
+// An environment variable is the other non-interactive source. Stdin is a
+// pipe or a terminal: a pipe is read until EOF and trimmed, and a terminal
+// prompts on stderr, turns echo off, and reads one line. Pogo does not read
+// a passphrase from a file. Confirmation (typing the passphrase twice)
+// happens for the terminal and for those out-of-band prompts. --key-env and
+// --key-stdin stay one-shot.
 package passphrase
 
 import (
@@ -15,6 +18,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/term"
@@ -48,10 +53,14 @@ var (
 // When Stdin is set and standard input is a terminal, Prompt is printed to
 // stderr (the usual interactive prompt when Prompt is empty). A pipe ignores
 // Prompt, reads until EOF, and trims the ends.
+//
+// File is the encrypted file name included in an out-of-band prompt. The
+// terminal prompt is unchanged.
 type Source struct {
 	Env    string
 	Stdin  bool
 	Prompt string
+	File   string
 }
 
 // CheckLength reports ErrTooShort or ErrTooLong.
@@ -92,7 +101,7 @@ func Acquire(src Source) ([]byte, error) {
 		if prompt == "" {
 			prompt = "Enter passphrase (min 15 characters): "
 		}
-		return readInteractive(prompt)
+		return readFromUser(prompt, src.File)
 	}
 }
 
@@ -108,11 +117,12 @@ func AcquireConfirmed(src Source, firstPrompt, confirmPrompt string) ([]byte, er
 	if confirmPrompt == "" {
 		confirmPrompt = "Enter it again to confirm: "
 	}
-	a, err := readInteractive(firstPrompt)
+	a, err := readFromUser(firstPrompt, src.File)
 	if err != nil {
+		securemem.Wipe(a)
 		return nil, err
 	}
-	b, err := readInteractive(confirmPrompt)
+	b, err := readFromUser(confirmPrompt, src.File)
 	if err != nil {
 		securemem.Wipe(a)
 		return nil, err
@@ -175,16 +185,67 @@ func readStdinPipe() ([]byte, error) {
 	return out, nil
 }
 
+// readFromUser prompts on a terminal, or through an out-of-band backend
+// when stdin is not a terminal.
+func readFromUser(prompt, file string) ([]byte, error) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		return readInteractive(prompt)
+	}
+	return promptOutOfBand(prompt, file)
+}
+
+// ttyTimeout is opt-in. Unset or invalid means a real terminal waits until
+// the person types or presses Ctrl-C, which is the normal interactive case.
+// POGO_TTY_TIMEOUT is a positive number of seconds for a harness that
+// allocated a terminal nobody is watching.
+func ttyTimeout() time.Duration {
+	v := os.Getenv("POGO_TTY_TIMEOUT")
+	if v == "" {
+		return 0
+	}
+	sec, err := strconv.Atoi(v)
+	if err != nil || sec <= 0 {
+		debug("POGO_TTY_TIMEOUT is not a positive number of seconds; the terminal will wait")
+		return 0
+	}
+	return time.Duration(sec) * time.Second
+}
+
 func readInteractive(prompt string) ([]byte, error) {
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return nil, errors.New("no passphrase was provided, and stdin is not a terminal so Pogo cannot ask for one")
 	}
 	fmt.Fprint(os.Stderr, prompt)
-	pw, err := term.ReadPassword(fd)
-	fmt.Fprintln(os.Stderr)
-	if err != nil {
-		return nil, fmt.Errorf("could not read passphrase: %w", err)
+	timeout := ttyTimeout()
+	if timeout <= 0 {
+		debug("terminal prompt waits until input or Ctrl-C")
+		pw, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return nil, fmt.Errorf("could not read passphrase: %w", err)
+		}
+		return pw, nil
 	}
-	return pw, nil
+	debug("terminal prompt timeout is " + timeout.String())
+	type result struct {
+		pw  []byte
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		pw, err := term.ReadPassword(fd)
+		ch <- result{pw, err}
+	}()
+	select {
+	case res := <-ch:
+		fmt.Fprintln(os.Stderr)
+		if res.err != nil {
+			return nil, fmt.Errorf("could not read passphrase: %w", res.err)
+		}
+		return res.pw, nil
+	case <-time.After(timeout):
+		fmt.Fprintln(os.Stderr)
+		return nil, fmt.Errorf("timed out waiting for a passphrase on the terminal after %s.\nA terminal waits until you type or press Ctrl-C unless POGO_TTY_TIMEOUT is set to a number of seconds.", timeout)
+	}
 }

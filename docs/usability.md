@@ -14,7 +14,8 @@ Use `pogo edit` to update values and `pogo rekey` to change the passphrase.
 
 ## Choosing a startup method
 
-- At a terminal, use the interactive prompt. The child retains access to stdin.
+- At a terminal, use the interactive prompt. It waits until you type or press Ctrl-C. The child retains access to stdin. `POGO_TTY_TIMEOUT` is optional and off by default.
+- When stdin is not a terminal, Pogo uses `POGO_ASKPASS`, the editor prompt, or a desktop askpass if one of those is already there. A local display is used only when its socket exists. `pogo doctor` reports which. An agent does not collect the passphrase. `POGO_PROMPT_TIMEOUT` bounds the out-of-band wait. An editor that accepts the request and does not answer does not fall through to another dialog.
 - For unattended startup, pipe from a configured password manager with
   `--key-stdin`. A pipe consumes stdin and trims whitespace from its ends.
   If stdin is a terminal, `--key-stdin` prompts on stderr, turns echo off, and

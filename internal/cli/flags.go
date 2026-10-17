@@ -8,7 +8,7 @@ import (
 const defaultEnc = ".env.enc"
 
 var commandNames = []string{
-	"init", "edit", "run", "encrypt", "decrypt", "convert", "rekey", "skill", "help", "version", "docker",
+	"init", "edit", "run", "encrypt", "decrypt", "convert", "rekey", "skill", "help", "version", "docker", "doctor",
 }
 
 // valueFlags take an argument. Bool flags do not.
@@ -39,6 +39,7 @@ var commandFlags = map[string][]string{
 	"help":    {},
 	"version": {},
 	"docker":  {},
+	"doctor":  {},
 }
 
 type options struct {

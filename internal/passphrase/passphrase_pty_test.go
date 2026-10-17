@@ -5,6 +5,7 @@ package passphrase
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -122,6 +123,8 @@ func TestReadStdinTerminalConfirmedOnce(t *testing.T) {
 
 func openPTY(t *testing.T) (master, slave *os.File) {
 	t.Helper()
+	// A real terminal waits. An ambient POGO_TTY_TIMEOUT must not change that.
+	t.Setenv("POGO_TTY_TIMEOUT", "")
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
 		t.Skipf("ptmx: %v", err)
@@ -192,6 +195,71 @@ func waitEchoOff(t *testing.T, slave *os.File) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+func TestTTYIgnoresAskpassAndEditor(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ask.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho leaked\nexit 99\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("POGO_ASKPASS", script)
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", filepath.Join(dir, "missing.sock"))
+	t.Setenv("POGO_TTY_TIMEOUT", "")
+
+	master, slave := openPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	old := os.Stdin
+	os.Stdin = slave
+	defer func() { os.Stdin = old }()
+
+	done := make(chan resultTTY, 1)
+	go func() {
+		pass, err := Acquire(Source{Prompt: "Enter passphrase: "})
+		done <- resultTTY{pass, err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if _, err := master.Write([]byte("pogo-test-passphrase\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatal(res.err)
+		}
+		if string(res.pass) != "pogo-test-passphrase" {
+			t.Fatalf("%q", res.pass)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal prompt did not read the typed passphrase")
+	}
+}
+
+func TestTTYTimeoutOptIn(t *testing.T) {
+	master, slave := openPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	t.Setenv("POGO_TTY_TIMEOUT", "1")
+	old := os.Stdin
+	os.Stdin = slave
+	defer func() { os.Stdin = old }()
+
+	start := time.Now()
+	_, err := Acquire(Source{Prompt: "Enter passphrase: "})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("%v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("terminal timeout hung")
+	}
+	// Closing the slave unblocks the read that is still sitting in the timeout goroutine.
+	slave.Close()
+}
+
+type resultTTY struct {
+	pass []byte
+	err  error
 }
 
 func assertNoEcho(t *testing.T, master *os.File, secret string) {
