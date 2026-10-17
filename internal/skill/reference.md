@@ -28,8 +28,7 @@ Flags on every command:
 | `-f`, `--file` | `.env.enc` | Encrypted file path. On `encrypt` and `convert` this is the output |
 | `--key-env` | none | Last resort. Exact value, no trim. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. `pogo run` removes it from the child. Prefer `--key-stdin` |
 | `--key-stdin` | off | Pipe: read all of stdin and trim whitespace. Terminal: prompt on stderr, echo off, one line |
-| `--min-length` | 15 | Minimum passphrase length in characters. Lowest allowed value is 1. Below 15, Pogo warns |
-| `--allow-short-passphrase` | off | Skip the 15-character minimum. A passphrase is still required. Empty or whitespace-only is rejected. Warns on stderr |
+| `--allow-short-passphrase` | off | On create, skip the 15-character minimum. Empty or whitespace-only is rejected. Warns on stderr. Ignored when opening a file |
 | `-h`, `--help` |  | Show help and exit 0 |
 
 Other flags:
@@ -65,14 +64,14 @@ Use one method only. If you pass more than one of `--key-env` and `--key-stdin`,
 | A process already has the variable | `--key-env POGO_KEY` | Last resort. The passphrase stays in the process environment, visible in `/proc` and `docker inspect`. Pogo removes it from the child |
 | An agent or script | `--key-stdin` | Prefer this over `--key-env`. `bash -lc` can reset `PATH`: install pogo to `/usr/local/bin` or call it by absolute path |
 
-Interactive prompts:
+Interactive prompts when creating a passphrase:
 
 ```text
 Enter passphrase (min 15 characters):
 Enter it again to confirm:
 ```
 
-`rekey` asks for the current passphrase, then the new one, then confirmation.
+Opening an existing file prompts with `Enter passphrase: ` and does not mention a minimum. `rekey` asks for the current passphrase, then the new one, then confirmation. The new passphrase uses the creation minimum.
 
 Never put the passphrase in shell history, logs, source control, a file, or command-line arguments. There is no `--passphrase` flag on purpose. Do not write it to a Compose secret or `/run/secrets` for Pogo to read.
 
@@ -82,9 +81,11 @@ When stdin is a pipe, `--key-stdin` reads the entire stdin and trims leading and
 
 When you create a file (`init`, `convert`, `encrypt`) or set a new passphrase (`rekey`), interactive entry is confirmed by typing it twice. `--key-env` and `--key-stdin` are not confirmed a second time. Pogo will not read a passphrase from a file.
 
-The minimum length is checked on `init`, `edit`, `encrypt`, `decrypt`, `convert`, `rekey`, and `run`, before any slow key derivation. A short passphrase exits 4. If you encrypted with `--min-length 12`, later commands must pass `--min-length 12` as well, or they will refuse the passphrase.
+The 15-character minimum is checked only when creating a passphrase (`init`, `encrypt`, `convert`, and the new passphrase for `rekey`), before any slow key derivation. A shorter passphrase exits 4 unless you pass `--allow-short-passphrase`.
 
-`--allow-short-passphrase` skips the default of 15 without making you pick a number. `--min-length` already allows a value as low as 1, so the two agree: a short passphrase can be stored, and you must pass the same flag or the same `--min-length` when you open the file later. If you pass both, `--min-length` is the minimum. Empty or whitespace-only is still rejected (exit 4). The flag prints one warning on stderr (`short passphrases are much easier to guess`) and does not write that warning to stdout. It covers the new passphrase on `rekey` as well as the current one. It works with the prompt, `--key-stdin`, and `--key-env`.
+`--allow-short-passphrase` skips that minimum. One character that is not only whitespace is enough. Empty or whitespace-only is still rejected (exit 4). The flag prints one warning on stderr (`short passphrases are much easier to guess`) and does not write that warning to stdout. It applies to the new passphrase on `rekey`. It works with the prompt, `--key-stdin`, and `--key-env`.
+
+Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) does not apply the minimum. Any passphrase whose length is greater than 0 is tried. Only an empty passphrase is rejected (exit 4). A wrong passphrase still exits 2. `--allow-short-passphrase` is accepted on those commands and has no effect, and the warning is not printed. You do not pass the flag again to open a file that was created with a short passphrase. `edit` re-saves with the same passphrase.
 
 Do not pass `--allow-short-passphrase` unless the user explicitly asks for it.
 
@@ -146,7 +147,7 @@ Child processes inherit the environment. `npm start`, `pnpm`, `yarn`, nodemon, `
 | 1 | Usage or other error (bad flag, missing file, passphrase mismatch, program not found) |
 | 2 | Decryption failed: wrong passphrase or damaged file |
 | 3 | The editor ran and exited non-zero. The encrypted file was not updated |
-| 4 | Passphrase shorter than the minimum (default 15), or empty or only whitespace. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase |
+| 4 | Creating a passphrase: shorter than 15 characters, or empty or only whitespace. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase. Opening an existing file: only an empty passphrase |
 
 `pogo run` uses exec. Once the program has started, the exit code and signals are the program's, not Pogo's. Pogo's own codes above apply only when Pogo fails before the program starts. Example: a program that exits 7 makes the shell see 7.
 

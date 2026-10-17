@@ -29,9 +29,11 @@ Use an absolute `-f` path in services. `--env NAME` selects an environment secti
 ## Recovering from common errors
 
 Run `pogo help` or `pogo help run` for command examples. Missing-file errors show
-creation commands. Exit 2 means decryption failed; exit 4 means the passphrase is
-too short, or empty or only whitespace. `--allow-short-passphrase` skips the
-15-character minimum and still rejects a blank passphrase. After startup, the
+creation commands. Exit 2 means decryption failed. Exit 4 on create means the
+passphrase is shorter than 15 characters, or empty or only whitespace.
+`--allow-short-passphrase` skips the 15-character minimum when you create a
+passphrase and still rejects a blank passphrase. Opening an existing file
+rejects only an empty passphrase with exit 4. After startup, the
 child program supplies the exit code.
 
 ## Secret handling

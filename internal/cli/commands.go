@@ -61,7 +61,7 @@ func cmdDocker(opts options) (int, error) {
 }
 
 func cmdInit(opts options) (int, error) {
-	warnMin(opts)
+	warnShort(opts)
 	enc, err := oneEnc(opts.file, opts.fileSet, opts.positionals)
 	if err != nil {
 		return 1, err
@@ -73,7 +73,7 @@ func cmdInit(opts options) (int, error) {
 	if ok && !opts.force {
 		return 1, refuseOverwrite(enc)
 	}
-	pass, code, err := acquire(opts, true, enterPrompt(opts), confirmPrompt())
+	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt())
 	if err != nil {
 		return code, err
 	}
@@ -91,7 +91,6 @@ func cmdInit(opts options) (int, error) {
 }
 
 func cmdEdit(opts options) (int, error) {
-	warnMin(opts)
 	enc, err := oneEnc(opts.file, opts.fileSet, opts.positionals)
 	if err != nil {
 		return 1, err
@@ -103,7 +102,7 @@ func cmdEdit(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	pass, code, err := acquire(opts, false, enterPrompt(opts), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "")
 	if err != nil {
 		return code, err
 	}
@@ -130,7 +129,6 @@ func cmdEdit(opts options) (int, error) {
 }
 
 func cmdRun(opts options) (int, error) {
-	warnMin(opts)
 	if !opts.hasDD || len(opts.runCmd) == 0 {
 		if len(opts.positionals) > 0 && !opts.hasDD {
 			return 1, fmt.Errorf("pogo run needs the program after --.\nExample: pogo run -- %s\nWithout --, those words are not a program. They would be read as an encrypted file name.", strings.Join(opts.positionals, " "))
@@ -148,7 +146,7 @@ func cmdRun(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	pass, code, err := acquire(opts, false, enterPrompt(opts), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "")
 	if err != nil {
 		return code, err
 	}
@@ -198,7 +196,7 @@ func cmdConvert(opts options) (int, error) {
 }
 
 func encryptLike(opts options, convert bool) (int, error) {
-	warnMin(opts)
+	warnShort(opts)
 	usage := "pogo encrypt needs the plaintext file to read.\nExample: pogo encrypt .env\nExample with a custom output name: pogo encrypt .env -f secrets.enc"
 	if convert {
 		usage = "pogo convert needs the plaintext env file.\nExample: pogo convert .env\nExample with a custom output name: pogo convert .env -f .env.production.enc"
@@ -226,7 +224,7 @@ func encryptLike(opts options, convert bool) (int, error) {
 		return 1, err
 	}
 	defer securemem.Wipe(data)
-	pass, code, err := acquire(opts, true, enterPrompt(opts), confirmPrompt())
+	pass, code, err := acquire(opts, false, true, createPrompt(opts), confirmPrompt())
 	if err != nil {
 		return code, err
 	}
@@ -243,7 +241,6 @@ func encryptLike(opts options, convert bool) (int, error) {
 }
 
 func cmdDecrypt(opts options) (int, error) {
-	warnMin(opts)
 	enc, outfile, toStdout, err := decryptPaths(opts.file, opts.fileSet, opts.positionals)
 	if err != nil {
 		return 1, err
@@ -264,7 +261,7 @@ func cmdDecrypt(opts options) (int, error) {
 			return 1, refuseOverwrite(outfile)
 		}
 	}
-	pass, code, err := acquire(opts, false, enterPrompt(opts), "")
+	pass, code, err := acquire(opts, true, false, openPrompt(), "")
 	if err != nil {
 		return code, err
 	}
@@ -304,7 +301,6 @@ func cmdDecrypt(opts options) (int, error) {
 }
 
 func cmdRekey(opts options) (int, error) {
-	warnMin(opts)
 	enc, err := oneEnc(opts.file, opts.fileSet, opts.positionals)
 	if err != nil {
 		return 1, err
@@ -316,7 +312,7 @@ func cmdRekey(opts options) (int, error) {
 	if !ok {
 		return 1, missingEnc(enc)
 	}
-	oldPass, code, err := acquire(opts, false, "Enter the current passphrase: ", "")
+	oldPass, code, err := acquire(opts, true, false, "Enter the current passphrase: ", "")
 	if err != nil {
 		return code, err
 	}
@@ -332,7 +328,10 @@ func cmdRekey(opts options) (int, error) {
 	if opts.newKeyEnv != "" {
 		newOpts.keyEnv = opts.newKeyEnv
 	}
-	newPass, code, err := acquire(newOpts, true, newPassPrompt(newOpts), newConfirmPrompt())
+	// The new passphrase is a create. Warn here, after the file has opened,
+	// so a failed open does not print the short-passphrase warning.
+	warnShort(newOpts)
+	newPass, code, err := acquire(newOpts, false, true, newPassPrompt(newOpts), newConfirmPrompt())
 	if err != nil {
 		return code, err
 	}
@@ -375,7 +374,12 @@ func cmdSkill(opts options) (int, error) {
 	return 0, nil
 }
 
-func acquire(opts options, confirm bool, prompt, confirmPrompt string) ([]byte, int, error) {
+// acquire reads a passphrase and checks it before any slow key derivation.
+// opening is the decrypt path: run, decrypt, edit, and the current passphrase
+// for rekey. That path rejects only an empty passphrase. Creating a passphrase
+// (init, encrypt, convert, and rekey's new passphrase) keeps the 15-character
+// minimum unless --allow-short-passphrase is set.
+func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt string) ([]byte, int, error) {
 	src := passphrase.Source{
 		Env:    opts.keyEnv,
 		Stdin:  opts.keyStdin,
@@ -399,17 +403,39 @@ func acquire(opts options, confirm bool, prompt, confirmPrompt string) ([]byte, 
 		}
 		return nil, 1, err
 	}
-	min := effectiveMin(opts)
-	if relaxedLength(opts) && passphrase.IsBlank(pass) {
+	if opening {
+		return checkOpenPassphrase(pass)
+	}
+	return checkCreatePassphrase(opts, pass)
+}
+
+func checkOpenPassphrase(pass []byte) ([]byte, int, error) {
+	if len(pass) == 0 {
+		securemem.Wipe(pass)
+		return nil, 4, fmt.Errorf("Passphrase is empty.\nA passphrase is required to open this file.")
+	}
+	if len(pass) > passphrase.MaxBytes {
+		securemem.Wipe(pass)
+		return nil, 1, fmt.Errorf("Passphrase is longer than %d bytes.\nUse a shorter passphrase.", passphrase.MaxBytes)
+	}
+	return pass, 0, nil
+}
+
+func checkCreatePassphrase(opts options, pass []byte) ([]byte, int, error) {
+	if opts.allowShort && passphrase.IsBlank(pass) {
 		n := passphrase.Length(pass)
 		securemem.Wipe(pass)
-		return nil, 4, fmt.Errorf("Passphrase is empty or only whitespace (%d characters). A passphrase is still required.\n--allow-short-passphrase and --min-length can skip the 15-character minimum. They do not accept a blank passphrase.", n)
+		return nil, 4, fmt.Errorf("Passphrase is empty or only whitespace (%d characters). A passphrase is still required.\n--allow-short-passphrase skips the 15-character minimum. It does not accept a blank passphrase.", n)
+	}
+	min := passphrase.DefaultMin
+	if opts.allowShort {
+		min = 1
 	}
 	if err := passphrase.CheckLength(pass, min); err != nil {
 		n := passphrase.Length(pass)
 		securemem.Wipe(pass)
 		if errors.Is(err, passphrase.ErrTooShort) {
-			return nil, 4, fmt.Errorf("Passphrase is too short (%d characters). Pogo requires at least %d.\nPick a longer passphrase and try again. To set a different minimum on purpose, pass --min-length N (the lowest allowed value is 1), or pass --allow-short-passphrase to skip the 15-character minimum.", n, min)
+			return nil, 4, fmt.Errorf("Passphrase is too short (%d characters). Pogo requires at least %d.\nPick a longer passphrase and try again. To use a shorter passphrase on purpose, pass --allow-short-passphrase.", n, min)
 		}
 		if errors.Is(err, passphrase.ErrTooLong) {
 			return nil, 1, fmt.Errorf("Passphrase is longer than %d bytes.\nUse a shorter passphrase.", passphrase.MaxBytes)
@@ -419,28 +445,15 @@ func acquire(opts options, confirm bool, prompt, confirmPrompt string) ([]byte, 
 	return pass, 0, nil
 }
 
-func effectiveMin(opts options) int {
-	// --min-length already accepts a floor as low as 1. The boolean flag
-	// is that same floor when you do not pick a number. An explicit
-	// --min-length still wins, including a number of 15 or more.
-	if opts.allowShort && !opts.minSet {
-		return passphrase.AbsoluteMin
-	}
-	return opts.minLength
+func openPrompt() string {
+	return "Enter passphrase: "
 }
 
-func relaxedLength(opts options) bool {
+func createPrompt(opts options) string {
 	if opts.allowShort {
-		return true
-	}
-	return opts.minSet && opts.minLength < passphrase.DefaultMin
-}
-
-func enterPrompt(opts options) string {
-	if opts.allowShort && !opts.minSet {
 		return "Enter passphrase: "
 	}
-	return fmt.Sprintf("Enter passphrase (min %d characters): ", effectiveMin(opts))
+	return fmt.Sprintf("Enter passphrase (min %d characters): ", passphrase.DefaultMin)
 }
 
 func confirmPrompt() string {
@@ -448,22 +461,19 @@ func confirmPrompt() string {
 }
 
 func newPassPrompt(opts options) string {
-	if opts.allowShort && !opts.minSet {
+	if opts.allowShort {
 		return "Enter a new passphrase: "
 	}
-	return fmt.Sprintf("Enter a new passphrase (min %d characters): ", effectiveMin(opts))
+	return fmt.Sprintf("Enter a new passphrase (min %d characters): ", passphrase.DefaultMin)
 }
 
 func newConfirmPrompt() string {
 	return "Enter the new passphrase again to confirm: "
 }
 
-func warnMin(opts options) {
+func warnShort(opts options) {
 	if opts.allowShort {
 		fmt.Fprintf(os.Stderr, "warning: short passphrases are much easier to guess.\n")
-	}
-	if opts.minSet && opts.minLength < passphrase.DefaultMin {
-		fmt.Fprintf(os.Stderr, "warning: --min-length is %d, below the recommended %d. Shorter passphrases are easier to guess.\n", opts.minLength, passphrase.DefaultMin)
 	}
 }
 
