@@ -335,7 +335,8 @@ pogo rekey --key-env POGO_OLD --new-key-env POGO_NEW`,
 Non-interactive. Export the variables in the shell first. Do not put the values in the command, and do not write them to a file:
   pogo rekey --key-env POGO_OLD --new-key-env POGO_NEW
 
-The new passphrase must be at least 15 characters unless you pass --min-length.`,
+The new passphrase must be at least 15 characters unless you pass --min-length or --allow-short-passphrase.
+--allow-short-passphrase applies to the current passphrase and to the new one. A blank new passphrase is still rejected.`,
 		frameworks: "Rekey does not change how programs are started. Keep using `pogo run` with the new passphrase.",
 		security:   securityNotes() + "\nDo not pass the new passphrase as a command-line argument, and do not put it in a file. Type it, or use --new-key-env.\n",
 		exits:      exitNotes(),
@@ -407,7 +408,7 @@ pogo help docker`,
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.0".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.1".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -683,6 +684,19 @@ func commonFlags() string {
     The lowest allowed N is 1. Anything below 15 is easier to guess, and Pogo prints a warning when you set that.
     Checked before the slow key derivation. Exit code 4 when the passphrase is shorter.
     If you created a file with a lower minimum, pass the same --min-length when you open it later.
+    This is the numbered way to allow a short passphrase. --allow-short-passphrase is the same idea without a number.
+
+--allow-short-passphrase
+    Skip the 15-character minimum. A passphrase is still required.
+    Empty or whitespace-only is rejected with exit code 4.
+    Pogo prints one warning line on standard error: short passphrases are much easier to guess.
+    That warning is not written to standard output, so "pogo run" output stays the program's output.
+    --min-length already accepts a number from 1 upward. This flag uses a minimum of 1 when you do not also pass --min-length.
+    If you pass both, --min-length is the minimum.
+    If you created a file with a short passphrase, pass this flag again when you open it (init, edit, run, encrypt, decrypt, convert, and rekey, including the new passphrase).
+    It works with the prompt, --key-stdin, and --key-env.
+    Example: printf '%s' "$SHORT_PASS" | pogo convert .env --key-stdin --allow-short-passphrase
+    Default: off.
 
 -h, --help
     Show help for this command and exit 0.
@@ -704,6 +718,7 @@ Pogo uses AES-256-GCM, which is the encryption, and Argon2id, which turns your p
 The file header (including those parameters) is checked as part of decryption. A wrong passphrase or a flipped bit fails decryption (exit 2).
 There is no network access and no telemetry.
 Pogo tries to zero passphrase and key bytes after use. Go can still keep copies the program cannot reach; do not treat zeroing as a guarantee. See the README.
+--allow-short-passphrase skips the 15-character minimum. Short passphrases are much easier to guess. Leave it off unless you mean to use a short passphrase. A blank passphrase is still rejected.
 `
 }
 
@@ -712,6 +727,7 @@ func exitNotes() string {
 1    Something else went wrong: usage, a missing file, a mismatched confirmation, or the program was not found.
 2    Decryption failed. The passphrase was wrong, or the file is damaged.
 3    The editor ran and exited non-zero. The encrypted file was not updated.
-4    The passphrase is shorter than --min-length (default 15).
+4    The passphrase is shorter than the minimum (default 15), or it is empty or only whitespace.
+     --allow-short-passphrase skips the 15-character minimum and still rejects a blank passphrase.
 `
 }

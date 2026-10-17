@@ -48,6 +48,7 @@ Never place the passphrase in shell history, logs, version control, or a file.
 - Never echo, log, or store the passphrase
 - Never write the passphrase to a file, even a mode-0600 file under /run, /tmp, or a Compose secret
 - Never pass `--key-file` or `--new-key-file`. Pogo rejects them on purpose
+- Do not pass `--allow-short-passphrase` unless the user explicitly asks for it. A short passphrase is much easier to guess. The default minimum is 15 characters. The flag only skips that length check. A passphrase is still required, and an empty or whitespace-only passphrase is rejected
 - Prefer the interactive prompt when a person is at the terminal
 - Prefer `--key-stdin` over `--key-env`. Pipe the passphrase, for example `printf '%s' "$PASS" | pogo run --key-stdin -- cmd`, or `op read ... | pogo ...`. `--key-env` leaves the passphrase in the process environment, which is visible in `/proc` and `docker inspect`. Use `--key-env` only as a last resort
 - `bash -lc` can reset `PATH`, so install pogo to `/usr/local/bin` or call it by absolute path
@@ -55,5 +56,17 @@ Never place the passphrase in shell history, logs, version control, or a file.
 - Use `pogo <command> --help` whenever flag details are needed. For containers, read `pogo help docker`
 - Default encrypted filename is `.env.enc`; `pogo run -- <command>` uses it automatically
 - Honor `-f` when the user specifies another name
+
+## Short passphrases
+
+Do not pass `--allow-short-passphrase` unless the user explicitly asks for a short passphrase. Short passphrases are much easier to guess. Pogo still requires a passphrase: empty or whitespace-only is rejected.
+
+`--min-length` can already be set as low as 1. `--allow-short-passphrase` is that same choice without picking a number. It applies to `init`, `edit`, `run`, `encrypt`, `decrypt`, `convert`, and `rekey` (including the new passphrase), with the prompt, `--key-stdin`, or `--key-env`.
+
+Example, only when the user asked for it:
+
+```bash
+printf '%s' "$SHORT_PASS" | pogo convert .env --key-stdin --allow-short-passphrase
+```
 
 Editing creates temporary plaintext. Cleanup covers normal exits and handled signals. SIGKILL, power loss, storage behavior, or editor backups can retain copies.

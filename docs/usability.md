@@ -30,7 +30,9 @@ Use an absolute `-f` path in services. `--env NAME` selects an environment secti
 
 Run `pogo help` or `pogo help run` for command examples. Missing-file errors show
 creation commands. Exit 2 means decryption failed; exit 4 means the passphrase is
-too short. After startup, the child program supplies the exit code.
+too short, or empty or only whitespace. `--allow-short-passphrase` skips the
+15-character minimum and still rejects a blank passphrase. After startup, the
+child program supplies the exit code.
 
 ## Secret handling
 

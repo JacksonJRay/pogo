@@ -14,7 +14,9 @@ import sys
 PROMPTS = (
     b"Enter the new passphrase again to confirm: ",
     b"Enter a new passphrase (min 15 characters): ",
+    b"Enter a new passphrase: ",
     b"Enter passphrase (min 15 characters): ",
+    b"Enter passphrase: ",
     b"Enter it again to confirm: ",
     b"Enter the current passphrase: ",
 )
