@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-17 — 1.0.2
+
+- Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) accepts any passphrase whose length is greater than 0. Only an empty passphrase is rejected (exit 4). A wrong passphrase still fails with exit 2. `--allow-short-passphrase` is still accepted on those commands and has no effect; Pogo does not print the short-passphrase warning on the open path. `edit` re-saves with the same passphrase and does not apply the creation minimum again.
+- Creating a passphrase (`init`, `encrypt`, `convert`, and the new passphrase for `rekey`) still requires 15 characters. `--allow-short-passphrase` is the only way to skip that minimum (one non-whitespace character is enough). Empty or whitespace-only is still rejected, and the short-passphrase warning is still printed. The length check still runs before Argon2.
+- Breaking: `--min-length` was removed.
+
 ## 2026-10-17 — 1.0.1
 
 - Added `--allow-short-passphrase`. It skips the 15-character minimum on `init`, `edit`, `run`, `encrypt`, `decrypt`, `convert`, and `rekey` (the current passphrase and the new one). A passphrase is still required: empty or whitespace-only is rejected with exit 4. The flag prints one warning line on stderr: short passphrases are much easier to guess. That warning is not written to stdout.

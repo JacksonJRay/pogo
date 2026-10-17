@@ -22,10 +22,8 @@ import (
 )
 
 const (
-	// DefaultMin is the recommended and default minimum length.
+	// DefaultMin is the minimum length when creating a passphrase.
 	DefaultMin = 15
-	// AbsoluteMin is the lowest --min-length Pogo will accept.
-	AbsoluteMin = 1
 	// MaxBytes caps a passphrase so a huge stdin cannot be read into memory as one.
 	MaxBytes = 4096
 )

@@ -83,8 +83,7 @@ The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every comma
 | `-f`, `--file` | `.env.enc` | Encrypted file. On `encrypt` and `convert`, the file Pogo writes |
 | `--key-env NAME` | none | Last resort. Read the passphrase from that variable, exactly, with no trim. It stays in the process environment, so `/proc` and `docker inspect` can show it. `pogo run` removes `NAME` from the child. Prefer `--key-stdin` |
 | `--key-stdin` | off | Pipe: read all of stdin, trim ends; the child sees end-of-file. Terminal: prompt on stderr, echo off, one line (same as the interactive prompt) |
-| `--min-length N` | 15 | Minimum passphrase length in characters (Unicode). Lowest allowed value is 1. Below 15, Pogo warns. Checked before the slow key step. Exit 4 if shorter |
-| `--allow-short-passphrase` | off | Skip the 15-character minimum. A passphrase is still required: empty or whitespace-only exits 4. Prints one warning on stderr. If you also pass `--min-length`, that number is the minimum |
+| `--allow-short-passphrase` | off | When creating a passphrase, skip the 15-character minimum. Empty or whitespace-only still exits 4, and Pogo prints one warning on stderr. Opening an existing file ignores this flag |
 | `--env NAME` | none | On `run` and `decrypt`, also load the `[NAME]` section. Those keys replace top-level keys with the same name |
 | `--no-override` | off | On `run`, keep variables that are already set. By default the encrypted file wins |
 | `--force` | off | On `init`, `encrypt`, `convert`, and `decrypt` to a file: replace an existing destination |
@@ -100,7 +99,7 @@ Enter passphrase (min 15 characters):
 Enter it again to confirm:
 ```
 
-`rekey` asks for the current passphrase, then the new one, then confirmation.
+That prompt is for creating a passphrase. Opening an existing file asks `Enter passphrase: ` and does not mention a minimum. `rekey` asks for the current passphrase, then the new one, then confirmation. The new passphrase uses the creation minimum.
 
 ### Multiple environments
 
@@ -129,7 +128,7 @@ Duplicate keys: the last one wins. Pogo does not expand `$VAR` inside values.
 | 1 | Usage or other error: bad flag, missing file, passphrase mismatch, program not found, interrupted edit |
 | 2 | Decryption failed: wrong passphrase or damaged file |
 | 3 | The editor ran and exited non-zero. The encrypted file was not created or updated |
-| 4 | Passphrase shorter than the minimum (default 15), or empty or only whitespace. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase |
+| 4 | Creating a passphrase: shorter than 15 characters, or empty or only whitespace. `--allow-short-passphrase` skips the 15-character minimum and still rejects a blank passphrase. Opening an existing file: only an empty passphrase |
 
 ## Editing
 
@@ -355,7 +354,7 @@ Compose interpolates `${VAR}` from the process Pogo started, and from a `.env` f
 - Default override: the encrypted file replaces variables already in the environment. `--no-override` keeps the existing value. For duplicate entries already in the environment, the first one wins, which is the POSIX rule.
 - `[section]` plus `--env` is the reading of "several environments in one file." There is no return-to-top syntax.
 - `--key-file` and `--new-key-file` were removed. Pogo will not read a passphrase from a file. `--key-env` does not trim, is stripped from the child, and is a last resort because the passphrase stays visible in `/proc` and `docker inspect`. `--key-stdin` on a pipe trims and consumes stdin. `--key-stdin` on a terminal prompts with echo off and reads one line.
-- Passphrase length is counted in Unicode characters. The floor is 1. Below 15, Pogo warns and still accepts it when you pass `--min-length`. `--allow-short-passphrase` is the same floor without a number: it skips the default of 15, still rejects an empty or whitespace-only passphrase, and prints one warning on stderr. If both flags are set, `--min-length` is the minimum. Files already encrypted with a passphrase of 15 or more characters open the same way as before.
+- Passphrase length is counted in Unicode characters. Creating a passphrase (`init`, `encrypt`, `convert`, and the new passphrase for `rekey`) requires 15 characters. `--allow-short-passphrase` skips that minimum: one character that is not only whitespace is enough, empty or whitespace-only is still rejected, and Pogo prints one warning on stderr. The check runs before Argon2. Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) accepts any non-empty passphrase and rejects only an empty one. `--allow-short-passphrase` is accepted on those commands and has no effect, and the short-passphrase warning is not printed. `edit` re-saves with the passphrase that opened the file and does not apply the creation minimum again.
 - Maximum passphrase size is 4096 bytes.
 - `pogo run` looks up the command on `PATH` (`exec.LookPath`) and then `syscall.Exec`. Defers do not run after a successful exec, so buffers are wiped first. The child's exit code and signals are the operating system's, not a wrapper's.
 - `EDITOR` is split on whitespace, not by a shell. The temp path is one extra argument.

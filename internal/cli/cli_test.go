@@ -114,7 +114,7 @@ func TestHelpFormsMatch(t *testing.T) {
 			}
 		}
 		if cmd == "docker" {
-			for _, phrase := range []string{"Enter passphrase (min 15 characters):", "docker inspect", "--key-stdin", "PID 1", "read -rs", "op read", "docker compose run -T", "-it", "Which method should I pick?"} {
+			for _, phrase := range []string{"Enter passphrase: ", "docker inspect", "--key-stdin", "PID 1", "read -rs", "op read", "docker compose run -T", "-it", "Which method should I pick?"} {
 				if !strings.Contains(longOut, phrase) {
 					t.Errorf("%s help missing %q", cmd, phrase)
 				}
@@ -203,24 +203,24 @@ func TestUsageAndShortPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, stderr = runCLI(t, "convert", plain, "-f", filepath.Join(dir, "out.enc"), "--key-env", "POGO_TEST_PASS")
-	if code != 4 {
+	if code != 4 || !strings.Contains(stderr, "too short") {
 		t.Fatalf("convert short %d %s", code, stderr)
+	}
+	code, _, stderr = runCLI(t, "encrypt", plain, "-f", filepath.Join(dir, "enc-short.enc"), "--key-env", "POGO_TEST_PASS")
+	if code != 4 || !strings.Contains(stderr, "too short") || !strings.Contains(stderr, "at least 15") {
+		t.Fatalf("encrypt short %d %s", code, stderr)
 	}
 	enc := filepath.Join(dir, "re.enc")
 	if err := os.WriteFile(enc, []byte("not a real file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, _, stderr = runCLI(t, "rekey", "-f", enc, "--key-env", "POGO_TEST_PASS")
-	if code != 4 {
-		t.Fatalf("rekey short %d %s", code, stderr)
+	if code != 2 || strings.Contains(stderr, "too short") {
+		t.Fatalf("rekey short current %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "tty.enc"))
 	if code != 1 || !strings.Contains(stderr, "not a terminal") || !strings.Contains(stderr, "-it") || !strings.Contains(stderr, "--key-stdin") {
 		t.Fatalf("no tty %d %s", code, stderr)
-	}
-	code, _, stderr = runCLI(t, "init", "--min-length", "0")
-	if code != 1 || !strings.Contains(stderr, "cannot be less than 1") {
-		t.Fatalf("min 0 %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "a.enc"), "other.enc")
 	if code != 1 || !strings.Contains(stderr, "two different") {
@@ -234,9 +234,13 @@ func TestUsageAndShortPassphrase(t *testing.T) {
 	if err := os.WriteFile(enc, []byte("not ciphertext"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr = runCLIStdin(t, "short\n", "run", "-f", enc, "--key-stdin", "--", "true")
-	if code != 4 || !strings.Contains(stderr, "too short") {
-		t.Fatalf("stdin short %d %s", code, stderr)
+	code, _, stderr = runCLIStdin(t, "short\n", "run", "-f", enc, "--key-stdin", "--", "pogo-this-command-does-not-exist")
+	if code != 2 || strings.Contains(stderr, "too short") || !strings.Contains(stderr, "not a usable Pogo") {
+		t.Fatalf("stdin short open %d %s", code, stderr)
+	}
+	code, _, stderr = runCLIStdin(t, "\n", "decrypt", "-f", enc, "--key-stdin")
+	if code != 4 || !strings.Contains(stderr, "Passphrase is empty") {
+		t.Fatalf("stdin empty open %d %s", code, stderr)
 	}
 	if strings.Contains(stderr, "Enter passphrase") {
 		t.Fatalf("piped --key-stdin prompted: %s", stderr)
@@ -278,7 +282,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.1") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.2") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")
@@ -474,35 +478,14 @@ func TestAllowShortPassphrase(t *testing.T) {
 		t.Fatalf("stdin short with flag %d stdout %q stderr %s", code, stdout, stderr)
 	}
 
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "min4.enc"), "--key-env", "POGO_FOUR", "--min-length", "4")
-	if code != 3 || !strings.Contains(stderr, "--min-length is 4") || strings.Contains(stderr, "much easier to guess") {
-		t.Fatalf("min-length 4 %d %s", code, stderr)
-	}
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "min4-short.enc"), "--key-env", "POGO_THREE", "--min-length", "4")
-	if code != 4 || !strings.Contains(stderr, "too short") || !strings.Contains(stderr, "at least 4") {
-		t.Fatalf("min-length 4 reject %d %s", code, stderr)
-	}
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "space.enc"), "--key-env", "POGO_ONE", "--min-length", "1")
-	if code != 3 {
-		t.Fatalf("min-length 1 letter %d %s", code, stderr)
+	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "one.enc"), "--key-env", "POGO_ONE", "--allow-short-passphrase")
+	if code != 3 || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
+		t.Fatalf("one character with flag %d %s", code, stderr)
 	}
 	t.Setenv("POGO_SPACE", " ")
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "space.enc"), "--key-env", "POGO_SPACE", "--min-length", "1")
+	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "space.enc"), "--key-env", "POGO_SPACE", "--allow-short-passphrase")
 	if code != 4 || !strings.Contains(stderr, "empty or only whitespace") {
-		t.Fatalf("min-length 1 blank %d %s", code, stderr)
-	}
-
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "both-short.enc"), "--key-env", "POGO_THREE", "--min-length", "4", "--allow-short-passphrase")
-	if code != 4 || !strings.Contains(stderr, "too short") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
-		t.Fatalf("both flags still honor min-length %d %s", code, stderr)
-	}
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "both-ok.enc"), "--key-env", "POGO_FOUR", "--min-length", "4", "--allow-short-passphrase")
-	if code != 3 || !strings.Contains(stderr, "short passphrases are much easier to guess.") || !strings.Contains(stderr, "--min-length is 4") {
-		t.Fatalf("both flags accept %d %s", code, stderr)
-	}
-	code, _, stderr = runCLI(t, "init", "-f", filepath.Join(dir, "explicit15.enc"), "--key-env", "POGO_SHORT", "--min-length", "15", "--allow-short-passphrase")
-	if code != 4 || !strings.Contains(stderr, "too short") {
-		t.Fatalf("explicit min 15 wins %d %s", code, stderr)
+		t.Fatalf("one space with flag %d %s", code, stderr)
 	}
 
 	junk := filepath.Join(dir, "junk.enc")
@@ -510,24 +493,32 @@ func TestAllowShortPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, stderr = runCLI(t, "rekey", "-f", junk, "--key-env", "POGO_SHORT", "--new-key-env", "POGO_FOUR")
-	if code != 4 || !strings.Contains(stderr, "too short") {
+	if code != 2 || strings.Contains(stderr, "too short") || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("rekey short current %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "rekey", "-f", junk, "--key-env", "POGO_SHORT", "--new-key-env", "POGO_FOUR", "--allow-short-passphrase")
-	if code != 2 || strings.Contains(stderr, "too short") {
+	if code != 2 || strings.Contains(stderr, "too short") || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("rekey short current with flag %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "edit", "-f", junk, "--key-env", "POGO_SHORT", "--allow-short-passphrase")
-	if code != 2 {
+	if code != 2 || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("edit short with flag %d %s", code, stderr)
 	}
-	code, _, stderr = runCLI(t, "run", "-f", junk, "--key-env", "POGO_SHORT", "--allow-short-passphrase", "--", "true")
-	if code != 2 || strings.Contains(stderr, "too short") {
+	code, _, stderr = runCLI(t, "run", "-f", junk, "--key-env", "POGO_SHORT", "--allow-short-passphrase", "--", "pogo-this-command-does-not-exist")
+	if code != 2 || strings.Contains(stderr, "too short") || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("run short with flag %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "decrypt", "-f", junk, "--key-env", "POGO_SHORT")
-	if code != 4 {
+	if code != 2 || strings.Contains(stderr, "too short") {
 		t.Fatalf("decrypt short without flag %d %s", code, stderr)
+	}
+	code, _, stderr = runCLI(t, "decrypt", "-f", junk, "--key-env", "POGO_EMPTY")
+	if code != 4 || !strings.Contains(stderr, "Passphrase is empty") || strings.Contains(stderr, "not a usable") {
+		t.Fatalf("empty open %d %s", code, stderr)
+	}
+	code, _, stderr = runCLI(t, "run", "-f", junk, "--key-env", "POGO_SPACE", "--", "pogo-this-command-does-not-exist")
+	if code != 2 || strings.Contains(stderr, "Passphrase is empty") || strings.Contains(stderr, "too short") {
+		t.Fatalf("whitespace open %d %s", code, stderr)
 	}
 
 	code, _, stderr = runCLI(t, "version", "--allow-short-passphrase")
@@ -553,7 +544,6 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	longEnc := filepath.Join(dir, "long.enc")
 	shortEnc := filepath.Join(dir, "short.enc")
 	spaceEnc := filepath.Join(dir, "space.enc")
-	minEnc := filepath.Join(dir, "min.enc")
 	body := "API_KEY=pogo_test_api_key_example\n"
 	if err := os.WriteFile(plain, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -561,7 +551,6 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	t.Setenv("POGO_LONG", "pogo-test-passphrase")
 	t.Setenv("POGO_SHORT", "short")
 	t.Setenv("POGO_TINY", "tiny")
-	t.Setenv("POGO_FOUR", "abcd")
 	t.Setenv("POGO_SPACES", strings.Repeat(" ", 15))
 
 	code, stdout, stderr := runCLI(t, "convert", plain, "-f", longEnc, "--key-env", "POGO_LONG")
@@ -575,12 +564,12 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	if strings.Contains(stdout, "easier to guess") {
 		t.Fatal("decrypt stdout contains the short-passphrase warning")
 	}
-	code, _, stderr = runCLI(t, "decrypt", "-f", longEnc, "--key-env", "POGO_SHORT")
-	if code != 4 || !strings.Contains(stderr, "too short") {
-		t.Fatalf("short against existing file %d %s", code, stderr)
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", longEnc, "--key-env", "POGO_SHORT")
+	if code != 2 || !strings.Contains(stderr, "Decryption failed") || strings.Contains(stderr, "too short") || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("short against existing file %d stdout %q stderr %s", code, stdout, stderr)
 	}
 	code, stdout, stderr = runCLI(t, "decrypt", "-f", longEnc, "--key-env", "POGO_SHORT", "--allow-short-passphrase")
-	if code != 2 || strings.Contains(stdout, "easier to guess") || !strings.Contains(stderr, "Decryption failed") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
+	if code != 2 || strings.Contains(stdout, "easier to guess") || strings.Contains(stderr, "easier to guess") || !strings.Contains(stderr, "Decryption failed") {
 		t.Fatalf("short against existing file with flag %d stdout %q stderr %s", code, stdout, stderr)
 	}
 
@@ -588,17 +577,25 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	if code != 0 || strings.Contains(stdout, "easier to guess") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
 		t.Fatalf("convert short %d stdout %q stderr %s", code, stdout, stderr)
 	}
-	code, _, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_SHORT")
-	if code != 4 {
-		t.Fatalf("open short file without flag %d %s", code, stderr)
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_SHORT")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") || strings.Contains(stdout, "easier to guess") {
+		t.Fatalf("open short file without flag %d %q %s", code, stdout, stderr)
 	}
 	code, stdout, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_SHORT", "--allow-short-passphrase")
-	if code != 0 || stdout != body || strings.Contains(stdout, "easier to guess") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
-		t.Fatalf("decrypt short %d %q %s", code, stdout, stderr)
+	if code != 0 || stdout != body || strings.Contains(stdout, "easier to guess") || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("decrypt short flag ignored %d %q %s", code, stdout, stderr)
 	}
-	code, stdout, stderr = runCLI(t, "run", "-f", shortEnc, "--key-env", "POGO_SHORT", "--allow-short-passphrase", "--", "pogo-this-command-does-not-exist")
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "Could not find command") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
+	code, stdout, stderr = runCLIStdin(t, "short\n", "decrypt", "-f", shortEnc, "--key-stdin")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("decrypt short stdin %d %q %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLI(t, "run", "-f", shortEnc, "--key-env", "POGO_SHORT", "--", "pogo-this-command-does-not-exist")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "Could not find command") || strings.Contains(stderr, "easier to guess") || strings.Contains(stderr, "too short") {
 		t.Fatalf("run short %d stdout %q stderr %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLIStdin(t, "short", "run", "-f", shortEnc, "--key-stdin", "--", "pogo-this-command-does-not-exist")
+	if code != 1 || !strings.Contains(stderr, "Could not find command") || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("run short stdin %d stdout %q stderr %s", code, stdout, stderr)
 	}
 	code, _, stderr = runCLI(t, "encrypt", plain, "-f", filepath.Join(dir, "enc2.enc"), "--key-env", "POGO_SHORT", "--allow-short-passphrase")
 	if code != 0 {
@@ -613,16 +610,12 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	if code != 0 || strings.Contains(stdout, "easier to guess") || !strings.Contains(stderr, "short passphrases are much easier to guess.") {
 		t.Fatalf("rekey short %d stdout %q stderr %s", code, stdout, stderr)
 	}
-	code, _, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_SHORT", "--allow-short-passphrase")
-	if code != 2 {
+	code, _, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_SHORT")
+	if code != 2 || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("old short after rekey %d %s", code, stderr)
 	}
-	code, _, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_TINY")
-	if code != 4 {
-		t.Fatalf("new short without flag %d %s", code, stderr)
-	}
-	code, stdout, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_TINY", "--allow-short-passphrase")
-	if code != 0 || stdout != body {
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", shortEnc, "--key-env", "POGO_TINY")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("new short decrypt %d %q %s", code, stdout, stderr)
 	}
 
@@ -634,18 +627,58 @@ func TestAllowShortPassphraseRoundTrip(t *testing.T) {
 	if code != 0 || stdout != body {
 		t.Fatalf("15 spaces decrypt %d %q %s", code, stdout, stderr)
 	}
-	code, _, stderr = runCLI(t, "decrypt", "-f", spaceEnc, "--key-env", "POGO_SPACES", "--allow-short-passphrase")
-	if code != 4 || !strings.Contains(stderr, "empty or only whitespace") {
-		t.Fatalf("flag rejects whitespace-only %d %s", code, stderr)
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", spaceEnc, "--key-env", "POGO_SPACES", "--allow-short-passphrase")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("open whitespace passphrase %d %q %s", code, stdout, stderr)
 	}
 
-	code, _, stderr = runCLI(t, "convert", plain, "-f", minEnc, "--key-env", "POGO_FOUR", "--min-length", "4")
-	if code != 0 || !strings.Contains(stderr, "--min-length is 4") {
-		t.Fatalf("min-length convert %d %s", code, stderr)
+	abcdEnc := filepath.Join(dir, "abcd.enc")
+	t.Setenv("POGO_ABCD", "abcd")
+	t.Setenv("POGO_EMPTY", "")
+	code, _, stderr = runCLI(t, "encrypt", plain, "-f", abcdEnc, "--key-env", "POGO_ABCD")
+	if code != 4 || !strings.Contains(stderr, "too short") {
+		t.Fatalf("encrypt abcd without flag %d %s", code, stderr)
 	}
-	code, stdout, stderr = runCLI(t, "decrypt", "-f", minEnc, "--key-env", "POGO_FOUR", "--min-length", "4")
-	if code != 0 || stdout != body {
-		t.Fatalf("min-length decrypt %d %q %s", code, stdout, stderr)
+	code, stdout, stderr = runCLI(t, "encrypt", plain, "-f", abcdEnc, "--key-env", "POGO_ABCD", "--allow-short-passphrase")
+	if code != 0 || !strings.Contains(stderr, "short passphrases are much easier to guess.") || strings.Contains(stdout, "easier to guess") {
+		t.Fatalf("encrypt abcd %d stdout %q stderr %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", abcdEnc, "--key-env", "POGO_ABCD")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("abcd key-env decrypt %d %q %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLIStdin(t, "abcd", "decrypt", "-f", abcdEnc, "--key-stdin")
+	if code != 0 || stdout != body || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("abcd key-stdin decrypt %d %q %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLI(t, "run", "-f", abcdEnc, "--key-env", "POGO_ABCD", "--", "pogo-this-command-does-not-exist")
+	if code != 1 || !strings.Contains(stderr, "Could not find command") || strings.Contains(stderr, "easier to guess") || strings.Contains(stderr, "too short") {
+		t.Fatalf("abcd key-env run %d stdout %q stderr %s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLIStdin(t, "abcd\n", "run", "-f", abcdEnc, "--key-stdin", "--", "pogo-this-command-does-not-exist")
+	if code != 1 || !strings.Contains(stderr, "Could not find command") || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("abcd key-stdin run %d stdout %q stderr %s", code, stdout, stderr)
+	}
+	code, _, stderr = runCLI(t, "decrypt", "-f", abcdEnc, "--key-env", "POGO_EMPTY")
+	if code != 4 || !strings.Contains(stderr, "Passphrase is empty") {
+		t.Fatalf("abcd empty %d %s", code, stderr)
+	}
+	code, _, stderr = runCLI(t, "decrypt", "-f", abcdEnc, "--key-env", "POGO_LONG")
+	if code != 2 || !strings.Contains(stderr, "Decryption failed") {
+		t.Fatalf("abcd wrong %d %s", code, stderr)
+	}
+	script := filepath.Join(dir, "append.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '\\nEDITED=yes\\n' >> \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EDITOR", script)
+	code, _, stderr = runCLI(t, "edit", "-f", abcdEnc, "--key-env", "POGO_ABCD")
+	if code != 0 || strings.Contains(stderr, "easier to guess") || strings.Contains(stderr, "too short") {
+		t.Fatalf("edit abcd %d %s", code, stderr)
+	}
+	code, stdout, stderr = runCLI(t, "decrypt", "-f", abcdEnc, "--key-env", "POGO_ABCD")
+	if code != 0 || !strings.Contains(stdout, "EDITED=yes") || !strings.Contains(stdout, "API_KEY=") || strings.Contains(stderr, "easier to guess") {
+		t.Fatalf("edit round trip %d %q %s", code, stdout, stderr)
 	}
 }
 

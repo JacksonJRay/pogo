@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -15,8 +14,8 @@ var commandNames = []string{
 // valueFlags take an argument. Bool flags do not.
 var valueFlags = map[string]bool{
 	"-f": true, "--file": true,
-	"--key-env":    true,
-	"--min-length": true, "--env": true,
+	"--key-env":     true,
+	"--env":         true,
 	"--new-key-env": true,
 	"--framework":   true,
 }
@@ -29,13 +28,13 @@ var boolFlags = map[string]bool{
 
 // flags a command accepts, besides the universal help flags.
 var commandFlags = map[string][]string{
-	"init":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
-	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase"},
-	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--env", "--no-override"},
-	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
-	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--env", "--force"},
-	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--force"},
-	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--min-length", "--allow-short-passphrase", "--new-key-env"},
+	"init":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
+	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase"},
+	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--no-override"},
+	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
+	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--force"},
+	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
+	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--new-key-env"},
 	"skill":   {"--list", "--framework"},
 	"help":    {},
 	"version": {},
@@ -47,8 +46,6 @@ type options struct {
 	fileSet     bool
 	keyEnv      string
 	keyStdin    bool
-	minLength   int
-	minSet      bool
 	allowShort  bool
 	envName     string
 	envSet      bool
@@ -210,7 +207,6 @@ func splitCommand(args []string) (pre []string, cmd string, rest []string, err e
 
 func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 	var opts options
-	opts.minLength = 15
 	var runCmd []string
 	hasDD := false
 	seen := map[string]bool{}
@@ -263,16 +259,6 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 			opts.keyEnv = val
 		case "--key-stdin":
 			opts.keyStdin = true
-		case "--min-length":
-			n, err := strconv.Atoi(val)
-			if err != nil {
-				return options{}, nil, false, fmt.Errorf("--min-length expects a whole number, for example --min-length 15.\n%q is not a number.", val)
-			}
-			if n < 1 {
-				return options{}, nil, false, fmt.Errorf("--min-length cannot be less than 1. The recommended value is 15.\nValues below 15 are allowed but easier to guess. Example: --min-length 15")
-			}
-			opts.minLength = n
-			opts.minSet = true
 		case "--allow-short-passphrase":
 			opts.allowShort = true
 		case "--env":
@@ -329,8 +315,6 @@ func exampleFor(flag string) string {
 		return "--file"
 	case "--key-env":
 		return "--key-env"
-	case "--min-length":
-		return "--min-length"
 	case "--env":
 		return "--env"
 	case "--new-key-env":
