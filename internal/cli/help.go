@@ -457,7 +457,7 @@ If it prints a backend and exits 0, run the program with no key flags and tell t
 
 If it exits 1, ask the person to run that command in their own terminal, or to pipe a secret manager into --key-stdin. Do not ask them to paste the passphrase into chat. --key-env is a last resort because the value stays visible in /proc and docker inspect.
 
-A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use.`,
+A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, and desktop dialogs. Unset, that wait is two minutes.`,
 		frameworks: "doctor is the same for every language. It does not decrypt a file and it does not start a program.",
 		security:   securityNotes() + "\ndoctor does not read, print, or store a passphrase. It does not print POGO_ASKPASS secrets or the editor auth token.\n",
 		exits: `0    A prompt is available (this terminal, POGO_ASKPASS, the editor, or a desktop askpass).
@@ -535,9 +535,11 @@ Troubleshooting. When stdin is not a terminal and no prompt on the machine can a
 
     pogo: no way to ask for the passphrase here
 
-The next lines name what was checked (POGO_ASKPASS, the editor socket, display). Ways forward, in order: run it yourself in a terminal; docker run -it (or compose run, or compose up with stdin_open and tty, then docker attach); --key-stdin piped from a secret manager; POGO_ASKPASS; and --key-env as a last resort (visible in /proc and docker inspect). The last line tells an agent not to ask for the passphrase in chat. Run "pogo doctor" to see the same choice without starting the program.
+The next lines name what was checked (POGO_ASKPASS, the editor socket, display). A local DISPLAY of :N is used only when /tmp/.X11-unix/XN exists. If that socket is missing, the check line is "display set but no X server socket". Ways forward, in order: run it yourself in a terminal; docker run -it (or compose run, or compose up with stdin_open and tty, then docker attach); --key-stdin piped from a secret manager; POGO_ASKPASS; and --key-env as a last resort (visible in /proc and docker inspect). The last line tells an agent not to ask for the passphrase in chat. Run "pogo doctor" to see the same choice without starting the program.
 
-A terminal waits at the passphrase prompt until you type or press Ctrl-C. POGO_TTY_TIMEOUT is an optional number of seconds. Leave it unset for normal interactive use.
+If the editor accepts the request and does not answer, Pogo exits 1 and the first line is "pogo: the editor prompt got no answer within the timeout". It does not open a desktop dialog. POGO_PROMPT_TIMEOUT is a number of seconds for that wait and for POGO_ASKPASS and desktop dialogs. Unset, the wait is two minutes.
+
+A terminal waits at the passphrase prompt until you type or press Ctrl-C. POGO_TTY_TIMEOUT is an optional number of seconds. Leave it unset for normal interactive use. POGO_DEBUG=1 prints "pogo: stdin is not a terminal" when that is the case.
 
 systemd has no terminal. Pipe from a password manager, or use --key-env for that process only. --key-env is visible in /proc and in systemctl show. Do not point Pogo at a file.
     ExecStart=/bin/sh -c 'op read op://vault/pogo/passphrase | /usr/local/bin/pogo run -f /etc/myapp/.env.enc --key-stdin -- /usr/bin/myapp'
@@ -716,11 +718,15 @@ func commonFlags() string {
     That is the same as the interactive prompt. docker run -it with a --key-stdin entrypoint does this.
     You do not press Ctrl-D. The program keeps the terminal.
     Default: off. If you also did not set --key-env, Pogo asks in the terminal when stdin is a terminal.
-    When stdin is not a terminal, Pogo asks through a prompt already on the machine, in this order: POGO_ASKPASS, the editor Git prompt (VSCODE_GIT_IPC_HANDLE, used by code-server, VS Code, and Cursor), then a desktop askpass when WAYLAND_DISPLAY, DISPLAY, or MIR_SOCKET is set.
+    When stdin is not a terminal, Pogo asks through a prompt already on the machine, in this order: POGO_ASKPASS, the editor Git prompt (VSCODE_GIT_IPC_HANDLE, used by code-server, VS Code, and Cursor), then a desktop askpass when a display socket is really there.
+    code-server and VS Code show Pogo's prompt. Cursor titles its box from a fake host, pogo-passphrase-for-<file>.invalid. That is Pogo's passphrase, not a Git login.
+    A local DISPLAY of :N is used only when /tmp/.X11-unix/XN exists. A missing socket is reported as "display set but no X server socket".
+    If the editor accepts the request and does not answer, Pogo exits 1. The first line is "pogo: the editor prompt got no answer within the timeout". It does not open another dialog.
     An agent runs "pogo doctor", then "pogo run -- <command>" with no key flags, and does not collect the passphrase.
     If nothing can ask, Pogo exits 1. The first line is "pogo: no way to ask for the passphrase here".
-    POGO_DEBUG=1 prints those detection steps on stderr. It never prints the passphrase.
+    POGO_DEBUG=1 prints those detection steps on stderr, including "pogo: stdin is not a terminal". It never prints the passphrase.
     A real terminal waits until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when nobody is at that terminal.
+    POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, and desktop dialogs. Unset, that wait is two minutes.
     Pogo will not read a passphrase from a file. --key-file was removed.
 
 --allow-short-passphrase

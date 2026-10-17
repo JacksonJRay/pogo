@@ -65,13 +65,13 @@ func Diagnose() Diagnosis {
 		return Diagnosis{
 			Available: true,
 			Backend:   "editor prompt",
-			Detail:    "Pogo will ask with the editor prompt (code-server, VS Code, or Cursor). An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that prompt. Do not collect the passphrase.",
+			Detail:    "Pogo will ask in the editor, in the box at the top of the window. code-server and VS Code show Pogo's prompt. Cursor titles the box with the file name. An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that box. Do not collect the passphrase.",
 			Checks:    checks,
 		}
 	}
 
-	if !displayPresent() {
-		note(noDisplayReason())
+	if ok, skip := displayDecision(); !ok {
+		note(skip)
 		return Diagnosis{Backend: "none", Checks: checks}
 	}
 	helpers := findHelpers()

@@ -427,6 +427,10 @@ func explainPassphrase(err error) error {
 	if errors.As(err, &np) {
 		return np
 	}
+	var timed *passphrase.EditorTimeoutError
+	if errors.As(err, &timed) {
+		return timed
+	}
 	if errors.Is(err, passphrase.ErrCancelled) {
 		return fmt.Errorf("The passphrase prompt was cancelled.\nRun the command again when you can answer the prompt.")
 	}

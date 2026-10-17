@@ -20,7 +20,7 @@ func quietEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, key := range []string{
-		"POGO_ASKPASS", "POGO_DEBUG", "POGO_TTY_TIMEOUT",
+		"POGO_ASKPASS", "POGO_DEBUG", "POGO_TTY_TIMEOUT", "POGO_PROMPT_TIMEOUT",
 		"VSCODE_GIT_IPC_HANDLE", "VSCODE_GIT_IPC_AUTH_TOKEN",
 		"DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET",
 		"XDG_CURRENT_DESKTOP", "XDG_RUNTIME_DIR",
@@ -31,6 +31,14 @@ func quietEnv(t *testing.T) string {
 	}
 	t.Setenv("PATH", dir)
 	t.Cleanup(SetAskpassDirsForTest(nil))
+	xdir := filepath.Join(dir, "x11")
+	if err := os.MkdirAll(xdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdir, "X1"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(SetX11DirForTest(xdir))
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -169,9 +177,16 @@ func TestEditorPayloadAndCursorHeader(t *testing.T) {
 		_ = json.NewEncoder(w).Encode("pogo-test-passphrase\n")
 	})
 	t.Setenv("VSCODE_GIT_IPC_HANDLE", path)
-	got, err := mustAcquire(t, Source{Prompt: "Enter passphrase: ", File: ".env.enc"})
+	var got []byte
+	var err error
+	stderr := withStderr(t, func() {
+		got, err = mustAcquire(t, Source{Prompt: "Enter passphrase: ", File: ".env.enc"})
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "Pogo is asking for the .env.enc passphrase in the editor (box at the top of the window).") {
+		t.Fatalf("announce %q", stderr)
 	}
 	if string(got) != "pogo-test-passphrase" {
 		t.Fatalf("%q", got)
@@ -192,8 +207,12 @@ func TestEditorPayloadAndCursorHeader(t *testing.T) {
 	if !strings.Contains(strings.ToLower(payload.Argv[2]), "password") || !strings.Contains(payload.Argv[2], ".env.enc") {
 		t.Fatalf("placeholder %q", payload.Argv[2])
 	}
-	if payload.Argv[4] != "https://pogo.invalid" {
+	wantURL := "https://pogo-passphrase@pogo-passphrase-for-.env.enc.invalid"
+	if payload.Argv[4] != wantURL {
 		t.Fatalf("host %q", payload.Argv[4])
+	}
+	if !strings.Contains(payload.Argv[2], "Enter passphrase for .env.enc:") {
+		t.Fatalf("placeholder %q", payload.Argv[2])
 	}
 
 	t.Setenv("VSCODE_GIT_IPC_AUTH_TOKEN", "cursor-token-test")
@@ -216,7 +235,7 @@ func TestEditorPayloadAndCursorHeader(t *testing.T) {
 	if _, ok := cursor["argv"]; ok {
 		t.Fatalf("cursor payload included argv: %s", gotBody)
 	}
-	if cursor["askpassType"] != "https" || cursor["host"] != "https://pogo.invalid" {
+	if cursor["askpassType"] != "https" || cursor["host"] != "https://pogo-passphrase@pogo-passphrase-for-.env.enc.invalid" {
 		t.Fatalf("%s", gotBody)
 	}
 	req, _ := cursor["request"].(string)
@@ -309,31 +328,12 @@ func TestNoBackendAndEnvironments(t *testing.T) {
 			want: []string{"editor socket connection refused"},
 		},
 		{
-			name: "hanging socket",
-			setup: func(t *testing.T, dir string) {
-				t.Cleanup(SetPromptTimeoutsForTest(200*time.Millisecond, 300*time.Millisecond))
-				sock := filepath.Join(dir, "hang.sock")
-				ln, err := net.Listen("unix", sock)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { ln.Close() })
-				go func() {
-					c, err := ln.Accept()
-					if err != nil {
-						return
-					}
-					time.Sleep(time.Minute)
-					c.Close()
-				}()
-				t.Setenv("VSCODE_GIT_IPC_HANDLE", sock)
-			},
-			want: []string{"editor socket timed out", NoPromptSummary},
-		},
-		{
 			name: "display helper cannot open display",
 			setup: func(t *testing.T, dir string) {
 				writeExec(t, dir, "zenity", "#!/bin/sh\necho 'cannot open display: :99' >&2\nexit 1\n")
+				if err := os.WriteFile(filepath.Join(dir, "x11", "X99"), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
 				t.Setenv("DISPLAY", ":99")
 			},
 			want: []string{"zenity could not open a display", NoPromptSummary},
@@ -382,7 +382,7 @@ func TestNoBackendAndEnvironments(t *testing.T) {
 			// doctor even when the dialog itself then fails. The cases
 			// below have neither.
 			switch tc.name {
-			case "hanging socket", "display helper cannot open display":
+			case "display helper cannot open display":
 			default:
 				d := Diagnose()
 				if d.Available {
@@ -524,7 +524,7 @@ func TestDebugAndDoctorAskpass(t *testing.T) {
 		t.Setenv("POGO_DEBUG", "1")
 		_, _ = mustAcquire(t, Source{})
 	})
-	if !strings.Contains(stderr, "pogo: POGO_ASKPASS not set") {
+	if !strings.Contains(stderr, "pogo: stdin is not a terminal") || !strings.Contains(stderr, "pogo: POGO_ASKPASS not set") {
 		t.Fatalf("debug %q", stderr)
 	}
 
@@ -628,6 +628,151 @@ func TestGCRRelaySkippedWithoutSocket(t *testing.T) {
 	got, err = mustAcquire(t, Source{})
 	if err != nil || string(got) != "from-gcr-socket" {
 		t.Fatalf("socket %q %v", got, err)
+	}
+}
+
+func TestEditorResponseTimeoutDoesNotFallThrough(t *testing.T) {
+	dir := quietEnv(t)
+	log := filepath.Join(dir, "called")
+	writeExec(t, dir, "zenity", "#!/bin/sh\necho called >> "+log+"\nprintf '%s\\n' 'from-desktop'\n")
+	t.Setenv("DISPLAY", ":1")
+	t.Cleanup(SetPromptTimeoutsForTest(200*time.Millisecond, 300*time.Millisecond))
+	sock := filepath.Join(dir, "hang.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		time.Sleep(time.Minute)
+		c.Close()
+	}()
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", sock)
+	start := time.Now()
+	got, err := mustAcquire(t, Source{Prompt: "Enter passphrase: ", File: ".env.enc"})
+	if time.Since(start) > 4*time.Second {
+		t.Fatal("hung")
+	}
+	if got != nil {
+		t.Fatalf("passphrase returned %q", got)
+	}
+	var timed *EditorTimeoutError
+	if !errors.As(err, &timed) {
+		t.Fatalf("%v", err)
+	}
+	text := err.Error()
+	if !strings.Contains(text, EditorTimeoutSummary) || !strings.Contains(text, "Ways forward, in order:") || !strings.Contains(text, AgentLine) {
+		t.Fatalf("%s", text)
+	}
+	if strings.Contains(text, NoPromptSummary) {
+		t.Fatalf("fell through to the no-prompt message:\n%s", text)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatal("desktop helper ran after an editor response timeout")
+	}
+}
+
+func TestDisplaySocketRequired(t *testing.T) {
+	dir := quietEnv(t)
+	log := filepath.Join(dir, "called")
+	writeExec(t, dir, "zenity", "#!/bin/sh\necho called >> "+log+"\nprintf '%s\\n' 'from-zenity'\n")
+
+	t.Setenv("DISPLAY", ":99")
+	got, err := mustAcquire(t, Source{})
+	if got != nil {
+		t.Fatalf("stale display returned %q", got)
+	}
+	var np *NoPromptError
+	if !errors.As(err, &np) || !strings.Contains(err.Error(), NoXSocketCheck) {
+		t.Fatalf("%v", err)
+	}
+	if _, statErr := os.Stat(log); !os.IsNotExist(statErr) {
+		t.Fatal("zenity ran without an X socket")
+	}
+	d := Diagnose()
+	if d.Available || !strings.Contains(d.Report(), NoXSocketCheck) {
+		t.Fatalf("doctor %+v %s", d, d.Report())
+	}
+
+	// SSH forwarding uses a TCP display. Do not require a local socket.
+	os.Remove(log)
+	t.Setenv("DISPLAY", "localhost:10.0")
+	got, err = mustAcquire(t, Source{})
+	if err != nil || string(got) != "from-zenity" {
+		t.Fatalf("tcp display %q %v", got, err)
+	}
+
+	// A relative Wayland name is the socket under XDG_RUNTIME_DIR.
+	os.Remove(log)
+	runtime := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(runtime, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtime, "wayland-0"), []byte("w"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISPLAY", "")
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	got, err = mustAcquire(t, Source{})
+	if err != nil || string(got) != "from-zenity" {
+		t.Fatalf("wayland %q %v", got, err)
+	}
+
+	os.Remove(log)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-missing")
+	got, err = mustAcquire(t, Source{})
+	if got != nil || !errors.As(err, &np) || !strings.Contains(err.Error(), NoXSocketCheck) {
+		t.Fatalf("missing wayland %q %v", got, err)
+	}
+	if _, statErr := os.Stat(log); !os.IsNotExist(statErr) {
+		t.Fatal("zenity ran without a wayland socket")
+	}
+
+	abs := filepath.Join(dir, "wayland.sock")
+	if err := os.WriteFile(abs, []byte("w"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAYLAND_DISPLAY", abs)
+	got, err = mustAcquire(t, Source{})
+	if err != nil || string(got) != "from-zenity" {
+		t.Fatalf("absolute wayland %q %v", got, err)
+	}
+}
+
+func TestPromptTimeoutEnv(t *testing.T) {
+	quietEnv(t)
+	t.Cleanup(SetPromptTimeoutsForTest(time.Second, 30*time.Second))
+	t.Setenv("POGO_PROMPT_TIMEOUT", "1")
+	if dialogTimeout() != time.Second {
+		t.Fatalf("%s", dialogTimeout())
+	}
+	t.Setenv("POGO_PROMPT_TIMEOUT", "nope")
+	if dialogTimeout() != 30*time.Second {
+		t.Fatalf("invalid %s", dialogTimeout())
+	}
+	t.Setenv("POGO_PROMPT_TIMEOUT", "")
+	if dialogTimeout() != 30*time.Second {
+		t.Fatalf("unset %s", dialogTimeout())
+	}
+	if n, ok := localXNumber(":1"); !ok || n != "1" {
+		t.Fatalf(":1 %q %v", n, ok)
+	}
+	if n, ok := localXNumber("unix:2.0"); !ok || n != "2" {
+		t.Fatalf("unix %q %v", n, ok)
+	}
+	if _, ok := localXNumber("localhost:10.0"); ok {
+		t.Fatal("tcp display was treated as local")
+	}
+	if editorURL(".env.enc") != "https://pogo-passphrase@pogo-passphrase-for-.env.enc.invalid" {
+		t.Fatal(editorURL(".env.enc"))
+	}
+	if strings.Contains(editorURL("my file"), " ") || !strings.HasSuffix(editorURL("my file"), ".invalid") {
+		t.Fatal(editorURL("my file"))
 	}
 }
 

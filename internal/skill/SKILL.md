@@ -46,6 +46,9 @@ Never place the passphrase in shell history, logs, version control, or a file.
 - Run `pogo doctor` before starting a program. It does not ask for a passphrase.
 - If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
 - If doctor exits 1, or Pogo prints `pogo: no way to ask for the passphrase here`, ask the person to run the command in their own terminal, or to pipe a secret manager into `--key-stdin`. Do not ask for the passphrase in chat. If you are an AI agent: do not ask the person to paste the passphrase into chat; ask them to run this command in their own terminal.
+- The editor box is at the top of the window. code-server and VS Code show Pogo's prompt. Cursor's box can say "Sign in" and "Password or personal access token"; the title names the file (`pogo-passphrase-for-.env.enc.invalid`) and the username, if shown, is `pogo-passphrase`. That is still Pogo's passphrase. Do not enter a Git password or a personal access token.
+- If Pogo prints `pogo: the editor prompt got no answer within the timeout`, the editor was asked and did not answer. Do not start another prompt and do not collect the passphrase. Ask the person to answer the box, or to run the command in their own terminal.
+- `POGO_PROMPT_TIMEOUT` is a number of seconds for the editor, `POGO_ASKPASS`, and desktop dialogs. Unset, that wait is two minutes. `POGO_TTY_TIMEOUT` is only the terminal, and it is off unless set.
 - `--key-env` is a last resort. The value stays visible in `/proc` and `docker inspect`.
 - Prefer `pogo convert` when a plaintext `.env` already exists
 - Show the exact command to the user before executing anything that writes or deletes

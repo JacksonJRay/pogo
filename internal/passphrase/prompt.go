@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,6 +62,35 @@ func FormatNoPrompt(checks []string) string {
 			b.WriteByte('\n')
 		}
 	}
+	writeWaysForward(&b)
+	return b.String()
+}
+
+// EditorTimeoutSummary is the first line when the editor accepted the request
+// and did not answer. It stays stable so a person or an agent can grep for it.
+const EditorTimeoutSummary = "pogo: the editor prompt got no answer within the timeout"
+
+// EditorTimeoutError means the editor socket accepted the askpass request and
+// then did not answer before the prompt timeout. The box may still be open.
+// Callers stop. They do not try a desktop askpass.
+type EditorTimeoutError struct {
+	Wait time.Duration
+}
+
+func (e *EditorTimeoutError) Error() string {
+	wait := promptTimeout
+	if e != nil && e.Wait > 0 {
+		wait = e.Wait
+	}
+	var b strings.Builder
+	b.WriteString(EditorTimeoutSummary)
+	b.WriteByte('\n')
+	fmt.Fprintf(&b, "The editor was asked and did not answer within %s. Pogo did not open another dialog.\n", wait)
+	writeWaysForward(&b)
+	return b.String()
+}
+
+func writeWaysForward(b *strings.Builder) {
 	b.WriteString("Ways forward, in order:\n")
 	b.WriteString("  1. Run this command yourself in a terminal.\n")
 	b.WriteString("  2. In Docker, use docker run -it, or docker compose run, or docker compose up with stdin_open: true and tty: true and then docker attach.\n")
@@ -68,7 +98,6 @@ func FormatNoPrompt(checks []string) string {
 	b.WriteString("  4. Set POGO_ASKPASS to a program that asks and prints one line on stdout.\n")
 	b.WriteString("  5. Last resort: --key-env NAME. The value stays visible in /proc and docker inspect.\n")
 	b.WriteString(AgentLine)
-	return b.String()
 }
 
 // How a desktop helper's non-zero exit is classified:
@@ -90,9 +119,13 @@ func FormatNoPrompt(checks []string) string {
 // started, it cannot show a prompt, so Pogo falls through.
 //
 // The editor channel falls through on a missing socket, a refused connection,
-// a dial timeout, a response timeout, or a non-200. Those are a dead editor,
-// not a cancel. Cancel is only HTTP 200 with an empty body or a JSON "".
-// An empty 200 does not fall through to a desktop dialog.
+// a dial timeout, or a non-200. Those never showed a box. Cancel is only
+// HTTP 200 with an empty body or a JSON "". An empty 200 does not fall
+// through to a desktop dialog.
+//
+// A response timeout is different. The request was sent and the editor may
+// still be showing the box, so Pogo stops. It does not open a desktop dialog
+// two minutes later. The error is EditorTimeoutError.
 var errDisplay = errors.New("askpass could not open a display")
 
 type editorSkip struct{ reason string }
@@ -130,6 +163,7 @@ func SetAskpassDirsForTest(dirs []string) func() {
 }
 
 func promptOutOfBand(prompt, file string) ([]byte, error) {
+	debug("stdin is not a terminal")
 	text := withFile(prompt, file)
 	var checks []string
 	note := func(msg string) {
@@ -159,9 +193,13 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 	if sock, skip := resolveEditorSocket(); sock == "" {
 		note(skip)
 	} else {
-		pass, err := askEditor(sock, text)
+		pass, err := askEditor(sock, text, file)
 		if err == nil || errors.Is(err, ErrCancelled) || errors.Is(err, ErrTooLong) {
 			return pass, err
+		}
+		var timed *EditorTimeoutError
+		if errors.As(err, &timed) {
+			return nil, err
 		}
 		var skipped *editorSkip
 		if errors.As(err, &skipped) {
@@ -171,8 +209,8 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 		}
 	}
 
-	if !displayPresent() {
-		note(noDisplayReason())
+	if ok, skip := displayDecision(); !ok {
+		note(skip)
 		return nil, &NoPromptError{Checks: checks}
 	}
 
@@ -203,13 +241,122 @@ func promptOutOfBand(prompt, file string) ([]byte, error) {
 	return nil, &NoPromptError{Checks: checks}
 }
 
-func displayPresent() bool {
-	for _, name := range []string{"WAYLAND_DISPLAY", "DISPLAY", "MIR_SOCKET"} {
-		if os.Getenv(name) != "" {
-			return true
+// NoXSocketCheck is the Checked: line when DISPLAY or WAYLAND_DISPLAY names
+// a local server whose socket is not there.
+const NoXSocketCheck = "display set but no X server socket"
+
+// x11SocketDir is where local displays :N keep their sockets (XN).
+// Tests point it at a fake directory.
+var x11SocketDir = "/tmp/.X11-unix"
+
+// SetX11DirForTest points local DISPLAY socket checks at dir.
+func SetX11DirForTest(dir string) func() {
+	old := x11SocketDir
+	x11SocketDir = dir
+	return func() { x11SocketDir = old }
+}
+
+// displayDecision reports whether a desktop askpass should be tried.
+// A local DISPLAY (:N or unix:N) needs /tmp/.X11-unix/XN. A relative
+// WAYLAND_DISPLAY needs that socket under XDG_RUNTIME_DIR. An absolute
+// Wayland path must exist. TCP displays such as localhost:10.0 are left
+// alone, because SSH forwarding does not put a socket in /tmp/.X11-unix.
+func displayDecision() (bool, string) {
+	wayland := os.Getenv("WAYLAND_DISPLAY")
+	display := os.Getenv("DISPLAY")
+	mir := os.Getenv("MIR_SOCKET")
+	if wayland == "" && display == "" && mir == "" {
+		return false, noDisplayReason()
+	}
+	if waylandReady(wayland) || x11Ready(display) || mirReady(mir) {
+		return true, ""
+	}
+	return false, NoXSocketCheck
+}
+
+func waylandReady(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	if filepath.IsAbs(name) {
+		return pathExists(name)
+	}
+	runtime := os.Getenv("XDG_RUNTIME_DIR")
+	if runtime == "" {
+		return false
+	}
+	return pathExists(filepath.Join(runtime, name))
+}
+
+func x11Ready(display string) bool {
+	display = strings.TrimSpace(display)
+	if display == "" {
+		return false
+	}
+	num, local := localXNumber(display)
+	if !local {
+		// TCP or a forwarded display. Do not require a local socket.
+		return true
+	}
+	return pathExists(filepath.Join(x11SocketDir, "X"+num))
+}
+
+func mirReady(path string) bool {
+	path = strings.TrimSpace(path)
+	return path != "" && pathExists(path)
+}
+
+// localXNumber reports the display number for :N, :N.S, unix:N, or unix/:N.
+// Anything else, including localhost:10.0, is not a local socket display.
+func localXNumber(display string) (string, bool) {
+	s := strings.TrimSpace(display)
+	switch {
+	case strings.HasPrefix(s, "unix/:"):
+		s = strings.TrimPrefix(s, "unix/")
+	case strings.HasPrefix(s, "unix:"):
+		s = strings.TrimPrefix(s, "unix:")
+		if !strings.HasPrefix(s, ":") {
+			s = ":" + s
 		}
 	}
-	return false
+	if !strings.HasPrefix(s, ":") {
+		return "", false
+	}
+	s = s[1:]
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" {
+		return "", false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	return s, true
+}
+
+func pathExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && !fi.IsDir()
+}
+
+// dialogTimeout is how long an out-of-band prompt may stay unanswered.
+// POGO_PROMPT_TIMEOUT is a positive number of seconds. Unset or invalid
+// keeps the default (two minutes, or the test override).
+func dialogTimeout() time.Duration {
+	v := os.Getenv("POGO_PROMPT_TIMEOUT")
+	if v == "" {
+		return promptTimeout
+	}
+	sec, err := strconv.Atoi(v)
+	if err != nil || sec <= 0 {
+		debug("POGO_PROMPT_TIMEOUT is not a positive number of seconds; using the default")
+		return promptTimeout
+	}
+	return time.Duration(sec) * time.Second
 }
 
 func noDisplayReason() string {
@@ -271,8 +418,6 @@ func editorPlaceholder(prompt string) string {
 	return strings.TrimRight(prompt, " \t") + " (password)"
 }
 
-const editorHost = "https://pogo.invalid"
-
 type runMode int
 
 const (
@@ -287,7 +432,7 @@ func runProgram(label string, argv []string, mode runMode) ([]byte, error) {
 	fmt.Fprintf(os.Stderr, "Asking for the passphrase with %s\n", label)
 	debug("running " + label)
 
-	ctx, cancel := contextWithTimeout(promptTimeout)
+	ctx, cancel := contextWithTimeout(dialogTimeout())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)

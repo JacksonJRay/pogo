@@ -20,6 +20,10 @@ func TestAgentRules(t *testing.T) {
 		"pogo run -- <command>` with no key flags",
 		"does not collect the passphrase",
 		"do not ask the person to paste the passphrase into chat",
+		"pogo: the editor prompt got no answer within the timeout",
+		"POGO_PROMPT_TIMEOUT",
+		"pogo-passphrase-for-.env.enc.invalid",
+		"Do not enter a Git password or a personal access token",
 		"Do not pass `--allow-short-passphrase` unless the user explicitly asks",
 		"printf '%s' \"$SHORT_PASS\" | pogo convert .env --key-stdin --allow-short-passphrase",
 	} {

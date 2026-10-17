@@ -24,9 +24,10 @@ import (
 // VSCODE_GIT_IPC_AUTH_TOKEN is set.
 //
 // argv[2] is the placeholder and contains "password" so the box is masked.
-// argv[4] is a URL whose host is pogo.invalid, so a cached Git password for
-// some other host is not returned. The workbench titles the box from that
-// URL; there is no generic prompt API.
+// argv[4] is a URL on the .invalid TLD whose host names the file, so a
+// cached Git password for some other host is not returned and the name
+// cannot resolve. code-server and VS Code show argv[2] as the placeholder.
+// Cursor ignores that text and titles its own box from the host.
 // resolveEditorSocket finds the Git IPC socket. VSCODE_GIT_IPC_HANDLE is the
 // normal path, including Remote SSH and code-server. A Flatpak or Snap build
 // sometimes injects a host path that is not visible inside the sandbox; the
@@ -97,7 +98,7 @@ func probeEditorSocket(path string) error {
 	return nil
 }
 
-func askEditor(socketPath, prompt string) ([]byte, error) {
+func askEditor(socketPath, prompt, file string) ([]byte, error) {
 	if !usableSocket(socketPath) {
 		return nil, &editorSkip{reason: "editor socket not found"}
 	}
@@ -107,16 +108,16 @@ func askEditor(socketPath, prompt string) ([]byte, error) {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Asking for the passphrase with the editor prompt\n")
-	debug("using the editor prompt")
-
 	placeholder := editorPlaceholder(prompt)
 	token := os.Getenv("VSCODE_GIT_IPC_AUTH_TOKEN")
-	payload, err := editorPayload(placeholder, token)
+	payload, err := editorPayload(placeholder, token, file)
 	if err != nil {
 		conn.Close()
 		return nil, &editorSkip{reason: "editor prompt failed"}
 	}
+
+	fmt.Fprintln(os.Stderr, editorAskLine(file))
+	debug("using the editor prompt")
 
 	status, raw, err := postAskpass(conn, payload, token)
 	securemem.Wipe(payload)
@@ -125,7 +126,7 @@ func askEditor(socketPath, prompt string) ([]byte, error) {
 			return nil, ErrTooLong
 		}
 		if isTimeoutErr(err) {
-			return nil, &editorSkip{reason: "editor socket timed out"}
+			return nil, &EditorTimeoutError{Wait: dialogTimeout()}
 		}
 		return nil, &editorSkip{reason: "editor prompt failed"}
 	}
@@ -136,7 +137,8 @@ func askEditor(socketPath, prompt string) ([]byte, error) {
 	return decodeEditorBody(raw)
 }
 
-func editorPayload(placeholder, token string) ([]byte, error) {
+func editorPayload(placeholder, token, file string) ([]byte, error) {
+	host := editorURL(file)
 	if token != "" && !strings.ContainsAny(token, "\r\n") {
 		return json.Marshal(struct {
 			AskpassType string `json:"askpassType"`
@@ -145,7 +147,7 @@ func editorPayload(placeholder, token string) ([]byte, error) {
 		}{
 			AskpassType: "https",
 			Request:     placeholder,
-			Host:        editorHost,
+			Host:        host,
 		})
 	}
 	return json.Marshal(struct {
@@ -155,8 +157,49 @@ func editorPayload(placeholder, token string) ([]byte, error) {
 		AskpassType: "https",
 		// The editor helper word-splits the Git prompt, so the workbench reads
 		// the placeholder from argv[2] and the URL from argv[4].
-		Argv: []string{"pogo", "askpass", placeholder, "for", editorHost},
+		Argv: []string{"pogo", "askpass", placeholder, "for", host},
 	})
+}
+
+// editorURL is the fake Git host sent to the editor. Cursor titles its box
+// "Sign in to <host>" and may show the URL user as the username, so both
+// say this is Pogo's passphrase for the file. The name ends in .invalid,
+// which does not resolve and cannot collide with a cached Git password.
+// code-server and VS Code still show the full prompt text from argv[2].
+func editorURL(file string) string {
+	return "https://pogo-passphrase@pogo-passphrase-for-" + hostLabel(file) + ".invalid"
+}
+
+func hostLabel(file string) string {
+	file = strings.TrimSpace(file)
+	var b strings.Builder
+	for _, r := range file {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	s := strings.Trim(b.String(), "-")
+	if s == "" || s == "." || s == ".." {
+		return "file"
+	}
+	if len(s) > 80 {
+		s = strings.Trim(s[:80], "-")
+		if s == "" {
+			return "file"
+		}
+	}
+	return s
+}
+
+func editorAskLine(file string) string {
+	name := strings.TrimSpace(file)
+	if name == "" || strings.ContainsAny(name, "\r\n") {
+		return "Pogo is asking for the passphrase in the editor (box at the top of the window)."
+	}
+	return "Pogo is asking for the " + name + " passphrase in the editor (box at the top of the window)."
 }
 
 func dialEditor(socketPath string) (net.Conn, error) {
@@ -166,7 +209,7 @@ func dialEditor(socketPath string) (net.Conn, error) {
 	conn, err := d.DialContext(ctx, "unix", socketPath)
 	if err != nil {
 		if isTimeoutErr(err) {
-			return nil, &editorSkip{reason: "editor socket timed out"}
+			return nil, &editorSkip{reason: "editor socket dial timed out"}
 		}
 		if isConnRefused(err) {
 			return nil, &editorSkip{reason: "editor socket connection refused"}
@@ -178,7 +221,7 @@ func dialEditor(socketPath string) (net.Conn, error) {
 
 func postAskpass(conn net.Conn, payload []byte, token string) (status int, body []byte, err error) {
 	defer conn.Close()
-	deadline := time.Now().Add(promptTimeout)
+	deadline := time.Now().Add(dialogTimeout())
 	if err := conn.SetDeadline(deadline); err != nil {
 		return 0, nil, err
 	}
