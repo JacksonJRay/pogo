@@ -98,5 +98,5 @@ Or convert an existing file with:
 
 A wrong passphrase or damaged file returns exit 2. Noninteractive startup requires
 `--key-stdin` or `--key-env`; interactive Docker startup requires a terminal.
-Run `pogo help docker` for the supported recipes. If the container build cannot
+Run `pogo help docker` for the supported recipes. The same guide is in [docs/docker.md](../../docs/docker.md). If the container build cannot
 find Pogo, run `make build` from the repository root first.
