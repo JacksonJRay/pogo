@@ -833,7 +833,7 @@ Do not guess, try, or search the filesystem for a passphrase. Do not suggest pri
 Pogo uses AES-256-GCM, which is the encryption, and Argon2id, which turns your passphrase into the key slowly so guessing is expensive. You do not configure either one. The slow step uses 128 MiB of memory, 4 passes, and 4 lanes. Each save gets a new random salt and a new random nonce (extra random bytes so two saves of the same text do not look alike).
 The file header (including those parameters) is checked as part of decryption. A wrong passphrase or a flipped bit fails decryption (exit 2).
 There is no telemetry. Commands other than upgrade do not use the network. pogo upgrade downloads a release over HTTPS.
-Pogo tries to zero passphrase and key bytes after use. Go can still keep copies the program cannot reach; do not treat zeroing as a guarantee. See the README.
+Pogo tries to zero passphrase and key bytes after use. Go can still keep copies the program cannot reach; do not treat zeroing as a guarantee. See docs/security.md.
 --allow-short-passphrase skips the 15-character minimum when you create a passphrase. Short passphrases are much easier to guess. Leave it off unless you mean to use a short passphrase. A blank passphrase is still rejected. Opening an existing file does not apply that minimum, and passing the flag then has no effect.
 `
 }
