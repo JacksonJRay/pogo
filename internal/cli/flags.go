@@ -24,6 +24,7 @@ var boolFlags = map[string]bool{
 	"--key-stdin": true, "--force": true, "--no-override": true, "--list": true,
 	"--allow-short-passphrase": true,
 	"--check":                  true, "--yes": true,
+	"--delete-original": true, "--keep-original": true,
 	"-h": true, "--help": true, "-V": true, "--version": true,
 }
 
@@ -34,7 +35,7 @@ var commandFlags = map[string][]string{
 	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--no-override"},
 	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
 	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--force"},
-	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
+	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force", "--delete-original", "--keep-original"},
 	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--new-key-env"},
 	"skill":   {"--list", "--framework"},
 	"help":    {},
@@ -45,26 +46,28 @@ var commandFlags = map[string][]string{
 }
 
 type options struct {
-	file         string
-	fileSet      bool
-	keyEnv       string
-	keyStdin     bool
-	allowShort   bool
-	envName      string
-	envSet       bool
-	force        bool
-	noOverride   bool
-	newKeyEnv    string
-	framework    string
-	list         bool
-	help         bool
-	version      bool
-	upgradeCheck bool
-	upgradeYes   bool
-	pinVersion   string
-	positionals  []string
-	runCmd       []string
-	hasDD        bool
+	file           string
+	fileSet        bool
+	keyEnv         string
+	keyStdin       bool
+	allowShort     bool
+	envName        string
+	envSet         bool
+	force          bool
+	noOverride     bool
+	deleteOriginal bool
+	keepOriginal   bool
+	newKeyEnv      string
+	framework      string
+	list           bool
+	help           bool
+	version        bool
+	upgradeCheck   bool
+	upgradeYes     bool
+	pinVersion     string
+	positionals    []string
+	runCmd         []string
+	hasDD          bool
 }
 
 type parsed struct {
@@ -279,6 +282,10 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 			opts.envSet = true
 		case "--force":
 			opts.force = true
+		case "--delete-original":
+			opts.deleteOriginal = true
+		case "--keep-original":
+			opts.keepOriginal = true
 		case "--no-override":
 			opts.noOverride = true
 		case "--new-key-env":
@@ -321,6 +328,9 @@ func validateOptions(cmd string, opts options) error {
 		if opts.list && opts.framework != "" {
 			return fmt.Errorf("Use either `pogo skill --list` or `pogo skill --framework <name>`, not both.")
 		}
+	}
+	if cmd == "convert" && opts.deleteOriginal && opts.keepOriginal {
+		return fmt.Errorf("Use only one of --delete-original and --keep-original.\n--delete-original removes the plaintext after the encrypted file is written and checked.\n--keep-original leaves the plaintext file and does not ask.")
 	}
 	return nil
 }

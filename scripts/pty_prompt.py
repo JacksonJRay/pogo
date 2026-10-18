@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Run a command in a pseudo-terminal and answer Pogo passphrase prompts.
+"""Run a command in a pseudo-terminal and answer Pogo prompts.
 
 The passphrase is written only to the child's tty, not to this process's stdout.
+A delete question (`Delete the original <file>? [y/N]`) is answered the same way.
+`--stdin-file` feeds that file to the child's stdin through a pipe, and the
+pty stays the controlling terminal, which is how `--key-stdin` plus the
+delete question is tested.
 """
 
 from __future__ import annotations
 
+import fcntl
 import os
+import pty
 import select
 import signal
 import sys
+import termios
 
 PROMPTS = (
     b"Enter the new passphrase again to confirm: ",
@@ -22,15 +29,32 @@ PROMPTS = (
 )
 
 
+def prompt_ready(buf: bytes) -> bool:
+    if buf.endswith(b"? [y/N] "):
+        return True
+    for prompt in PROMPTS:
+        if buf.endswith(prompt):
+            return True
+    # "New passphrase for <file>: ", "Confirm new passphrase for <file>: ",
+    # and "Current passphrase for <file>: ".
+    if buf.endswith(b": ") and b"passphrase" in buf[-180:]:
+        return True
+    return False
+
+
 def main() -> int:
     args = sys.argv[1:]
     if "--" not in args:
-        print("usage: pty_prompt.py [--pid-file PATH] [--responses-file PATH] -- cmd...", file=sys.stderr)
+        print(
+            "usage: pty_prompt.py [--pid-file PATH] [--responses-file PATH] [--stdin-file PATH] [--immediate] -- cmd...",
+            file=sys.stderr,
+        )
         return 1
     split = args.index("--")
     pre, cmd = args[:split], args[split + 1 :]
     responses: list[str] = []
     pid_file = ""
+    stdin_file = ""
     immediate = False
     i = 0
     while i < len(pre):
@@ -39,6 +63,9 @@ def main() -> int:
             i += 2
         elif pre[i] == "--pid-file":
             pid_file = pre[i + 1]
+            i += 2
+        elif pre[i] == "--stdin-file":
+            stdin_file = pre[i + 1]
             i += 2
         elif pre[i] == "--immediate":
             immediate = True
@@ -50,10 +77,7 @@ def main() -> int:
         print("missing command", file=sys.stderr)
         return 1
 
-    pid, fd = os.forkpty()
-    if pid == 0:
-        os.execvp(cmd[0], cmd)
-        os._exit(127)
+    pid, fd = spawn(cmd, stdin_file)
     if pid_file:
         with open(pid_file, "w", encoding="utf-8") as fh:
             fh.write(str(pid))
@@ -94,21 +118,54 @@ def main() -> int:
                 break
             os.write(1, data)
             buf = (buf + data)[-8192:]
-            for prompt in PROMPTS:
-                if buf.endswith(prompt):
-                    if not pending:
-                        sys.stderr.write("pty_prompt.py: ran out of passphrase responses\n")
-                        os.kill(pid, signal.SIGKILL)
-                        return 1
-                    os.write(fd, (pending.pop(0) + "\n").encode())
-                    buf = b""
-                    break
+            if prompt_ready(buf):
+                if not pending:
+                    sys.stderr.write("pty_prompt.py: ran out of responses\n")
+                    os.kill(pid, signal.SIGKILL)
+                    return 1
+                os.write(fd, (pending.pop(0) + "\n").encode())
+                buf = b""
         else:
             wpid, status = os.waitpid(pid, os.WNOHANG)
             if wpid != 0:
                 return exit_status(status)
     _, status = os.waitpid(pid, 0)
     return exit_status(status)
+
+
+def spawn(cmd: list[str], stdin_file: str) -> tuple[int, int]:
+    if not stdin_file:
+        pid, fd = os.forkpty()
+        if pid == 0:
+            os.execvp(cmd[0], cmd)
+            os._exit(127)
+        return pid, fd
+
+    master, slave = pty.openpty()
+    data = open(stdin_file, "rb").read()
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(master)
+        os.close(write_fd)
+        os.setsid()
+        try:
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+        except OSError as exc:
+            sys.stderr.write(f"pty_prompt.py: TIOCSCTTY: {exc}\n")
+            os._exit(1)
+        os.dup2(read_fd, 0)
+        os.dup2(slave, 1)
+        os.dup2(slave, 2)
+        os.close(read_fd)
+        os.close(slave)
+        os.execvp(cmd[0], cmd)
+        os._exit(127)
+    os.close(slave)
+    os.close(read_fd)
+    os.write(write_fd, data)
+    os.close(write_fd)
+    return pid, master
 
 
 def exit_status(status: int) -> int:

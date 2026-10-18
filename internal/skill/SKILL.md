@@ -23,7 +23,9 @@ pogo convert .env
 pogo convert .env -f .env.production.enc
 ```
 
-Pogo reads the plaintext file, prompts for a new passphrase (minimum 15 characters, entered twice), and writes the encrypted file. The original `.env` is left untouched. After verifying the encrypted file works, the user should delete the plaintext `.env`.
+Pogo reads the plaintext file, prompts for a new passphrase (minimum 15 characters, entered twice), writes the encrypted file, and checks that the file decrypts. It then asks `Delete the original .env? [y/N]` on the controlling terminal. The default is No. Only `y` or `yes` deletes the plaintext. Enter, any other answer, EOF, and a session with no terminal keep the file. The question is not read from stdin, so `printf '%s' "$PASS" | pogo convert .env --key-stdin` can still ask on the terminal.
+
+`--delete-original` deletes without asking. `--keep-original` keeps the file and does not ask. Either flag is for scripts. The delete is a normal remove, not a secure wipe. Do not pass `--delete-original` unless the user asked to delete the plaintext file. If conversion or the decrypt check fails, the plaintext is kept.
 
 ## Core workflows
 ```text
@@ -62,7 +64,8 @@ Never place the passphrase in shell history, logs, version control, or a file.
 - Prefer the interactive prompt when a person is at the terminal
 - Prefer `--key-stdin` over `--key-env`. Pipe a secret manager or keychain CLI, for example `op read ... | pogo run --key-stdin -- cmd` or `pass show ... | pogo ...`. Do not suggest printf 'PASSPHRASE' | pogo ..., because that stores the passphrase in shell history. `--key-env` leaves the passphrase in the process environment, which is visible in `/proc` and `docker inspect`. Use `--key-env` only as a last resort
 - `bash -lc` can reset `PATH`, so install pogo to `/usr/local/bin` or call it by absolute path
-- After a successful convert, remind the user to remove the plaintext `.env`
+- After a successful convert, Pogo checks that the encrypted file decrypts, then asks `Delete the original .env? [y/N]` on the controlling terminal. The default is No. Enter, anything other than y or yes, EOF, and no terminal keep the file. The question is read from the terminal, so it still works when `--key-stdin` has consumed stdin
+- Do not pass `--delete-original` unless the user explicitly asks to delete the plaintext. `--keep-original` skips the question and leaves the file. Deleting is a normal remove, not a secure wipe. If there is no terminal, the plaintext file stays. Tell the user. Do not delete it yourself unless they asked
 - Use `pogo <command> --help` whenever flag details are needed. For containers, read `pogo help docker`
 - Default encrypted filename is `.env.enc`; `pogo run -- <command>` uses it automatically
 - Honor `-f` when the user specifies another name

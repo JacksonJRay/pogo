@@ -21,8 +21,9 @@ pogo convert .env
 
 Enter a passphrase of at least 15 characters and confirm it. The documented
 `pogo-example-passphrase` is a fake test value; choose your own for real data.
-Conversion preserves `.env`. Verify the encrypted file works, then remove your
-plaintext copy. Keep `.env.example` as the labeled fake fixture.
+Pogo then asks `Delete the original .env? [y/N]`. Press Enter to keep `.env`.
+Only `y` or `yes` deletes it, and that delete is a normal remove, not a secure
+wipe. Keep `.env.example` as the labeled fake fixture.
 
 ## Start the host apps
 

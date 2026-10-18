@@ -10,8 +10,12 @@ pogo convert .env
 pogo run -- your-command
 ```
 
-`convert` prompts for a passphrase and confirmation. It preserves the source
-`.env`; verify that the encrypted file works, then remove your plaintext copy.
+`convert` prompts for a passphrase and confirmation. It writes the encrypted
+file, checks that it decrypts, then asks `Delete the original .env? [y/N]`
+on the controlling terminal. Press Enter to keep the plaintext. Only `y` or
+`yes` deletes it. With no terminal, the file stays. `--delete-original` and
+`--keep-original` skip the question. Deleting is a normal remove, not a
+secure wipe.
 Use `pogo edit` to update values and `pogo rekey` to change the passphrase.
 
 ## Choosing a startup method

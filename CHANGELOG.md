@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-18 — 1.0.5
+
+- `pogo convert` writes the encrypted file, reads it back, and decrypts it before it will remove the plaintext. It then asks `Delete the original <file>? [y/N]` on the controlling terminal. The default is No. Only `y` or `yes` deletes the file. Enter, any other answer, EOF, and a session with no terminal keep it. The question is not read from stdin, so it still works when `--key-stdin` is a pipe. `--delete-original` removes the plaintext without asking. `--keep-original` leaves it and does not ask. A failed conversion or a failed decrypt check never deletes the plaintext. The remove is a normal delete, not a secure wipe. `encrypt` still does not ask and does not delete.
+
 ## 2026-10-17 — 1.0.4
 
 - Added `pogo upgrade`. It reads the latest GitHub release of JacksonJRay/pogo, or the release named by `--version`, downloads `pogo-<os>-<arch>` and `SHA256SUMS` over HTTPS, checks the SHA256, and replaces the running binary only after the new file's `version` command prints the expected version. Already current prints `pogo 1.0.4 is the latest version` and exits 0. Pogo does not downgrade unless `--version` names an older release. `--check` does not install and exits 10 when a different release would be installed, including when the binary is on a Nix or Guix store path. A terminal asks `Install? [y/N]`. With no terminal, `--yes` is required. A permission error or an install onto a Nix or Guix store path leaves the original binary in place. If GitHub cannot be reached, Pogo exits 1 with `pogo: could not reach GitHub to check for updates:` and leaves the binary untouched. Machines with no CA certificates use a built-in Mozilla root set; system certificates and `SSL_CERT_FILE` / `SSL_CERT_DIR` still win when they are present. `GITHUB_TOKEN` is sent only to `api.github.com`. `POGO_UPGRADE_API` is a test-only API base.
