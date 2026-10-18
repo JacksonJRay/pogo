@@ -1,6 +1,6 @@
 # Security details
 
-Threat model for the Pogo CLI. The dated dependency assessment and SBOM are in [../security/README.md](../security/README.md). Commands, flags, and editors are in [reference.md](reference.md).
+Threat model for the Pogo CLI. The dated dependency assessment and SBOM are in [../security/README.md](../security/README.md). Commands and flags are in [commands.md](commands.md). Editors and environment variables are in [reference.md](reference.md).
 
 ## Security model
 

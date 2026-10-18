@@ -1,6 +1,6 @@
 # Reference
 
-Landing page: [../README.md](../README.md). Agents and passphrase prompts: [agents.md](agents.md). Containers: [docker.md](docker.md). Threat model and file format: [security.md](security.md).
+Landing page: [../README.md](../README.md). Commands: [commands.md](commands.md). Agents and passphrase prompts: [agents.md](agents.md). Containers: [docker.md](docker.md). Threat model and file format: [security.md](security.md).
 
 Shell examples in this file run from the repository root.
 
@@ -62,62 +62,7 @@ If the machine has no CA certificates, Pogo uses a built-in Mozilla root set so 
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `pogo init [file]` | Create a new encrypted file and open it in your editor |
-| `pogo edit [file]` | Decrypt, open your editor, encrypt again, delete the temp file |
-| `pogo run [file] -- <command...>` | Decrypt in memory and exec the command |
-| `pogo encrypt <plaintext> [file]` | Encrypt a plaintext file |
-| `pogo decrypt [file] [outfile]` | Decrypt to the terminal, or to a file if you pass one. Prints a warning |
-| `pogo convert <plaintext.env> [file]` | Encrypt an existing env file. The original is left in place |
-| `pogo rekey [file]` | Change the passphrase (new salt and nonce) |
-| `pogo skill` | Print the agent skill |
-| `pogo help [command]` | Help. Same as `pogo <command> --help` and `pogo <command> -h` |
-| `pogo version` | Print the version. Same as `pogo -V` and `pogo --version` |
-| `pogo docker` | Print the Docker guide. Same as `pogo help docker`. Does not start a container |
-| `pogo upgrade` | Replace this binary with a GitHub release, or `--check` without installing |
-| `pogo doctor` | Report which passphrase prompt would be used, and which editor `edit` would run, without asking |
-
-The default encrypted file is `.env.enc`. `-f` / `--file` sets it on every command that takes a file. A path typed after the command sets the same thing. If both are given and they differ, Pogo exits 1. For `decrypt`, one extra path is the plaintext output, and `-f` is the encrypted input. `skill`, `help`, `version`, `upgrade`, `docker`, and `doctor` do not read an encrypted file. `help` takes an optional command name. `upgrade`, `docker`, and `doctor` reject extra arguments. `skill` and `version` ignore extra words.
-
-`init` and `convert` are two ways to create the encrypted file. `init` writes a commented template and opens the editor. `convert` reads an existing plaintext env file. Running the second of them against an existing `.env.enc` needs `--force`.
-
-## Flags
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `-f`, `--file` | `.env.enc` | Encrypted file. On `encrypt` and `convert`, the file Pogo writes |
-| `--key-env NAME` | none | Last resort. Read the passphrase from that variable, exactly, with no trim. It stays in the process environment, so `/proc` and `docker inspect` can show it. `pogo run` removes `NAME` from the child. Prefer `--key-stdin` |
-| `--key-stdin` | off | Pipe: read all of stdin, trim ends; the child sees end-of-file. Terminal: prompt on stderr, echo off, one line (same as the interactive prompt) |
-| `--allow-short-passphrase` | off | When creating a passphrase, skip the 15-character minimum. Empty or whitespace-only still exits 4, and Pogo prints one warning on stderr. Opening an existing file ignores this flag |
-| `--env NAME` | none | On `run` and `decrypt`, also load the `[NAME]` section. Those keys replace top-level keys with the same name |
-| `--no-override` | off | On `run`, keep variables that are already set. By default the encrypted file wins |
-| `--force` | off | On `init`, `encrypt`, `convert`, and `decrypt` to a file: replace an existing destination |
-| `--new-key-env` | none | On `rekey`, read the new passphrase from a variable |
-| `--list` | off | On `skill`, print framework names |
-| `--framework NAME` | none | On `skill`, print one framework section |
-| `--check` | off | On `upgrade`, compare versions and do not install. Exit 10 when a different release would be installed |
-| `--yes` | off | On `upgrade`, install without asking. Required when stdin is not a terminal |
-| `--version vX.Y.Z` | latest | On `upgrade` only, install that release, including an older one. `pogo --version` with no command still prints the running version |
-| `-h`, `--help` |  | Help, exit 0 |
-| `-V`, `--version` |  | With no command, print the running version and exit 0. On `upgrade`, `--version` is the release to install. `-V` is not the pin |
-
-Use only one of `--key-env` and `--key-stdin`. If you pass neither, Pogo asks. The prompt order (terminal, `POGO_ASKPASS`, the editor, a desktop dialog) is in [agents.md](agents.md). `--key-file` and `--new-key-file` were removed: Pogo exits 1 and tells you to type the passphrase or use `--key-stdin`.
-
-Which flags each command accepts:
-
-| Command | Flags besides `-h` / `--help` |
-|---|---|
-| `init` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--force` |
-| `edit` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase` |
-| `run` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--env`, `--no-override` |
-| `encrypt` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--force` |
-| `decrypt` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--env`, `--force` |
-| `convert` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--force` |
-| `rekey` | `-f`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--new-key-env` |
-| `skill` | `--list`, `--framework` |
-| `upgrade` | `--check`, `--yes`, `--version` |
-| `help`, `version`, `docker`, `doctor` | none |
+Syntax and flags for each command: [commands.md](commands.md).
 
 ## Multiple environments
 

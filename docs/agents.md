@@ -6,7 +6,7 @@ Run `pogo doctor`, then `pogo run -- <command>` with no key flags, and tell the 
 
 Do not guess, try, or search the filesystem for a passphrase. Do not suggest `printf 'PASSPHRASE' | pogo ...`, because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI instead. There is no key file. `--key-file` and `--new-key-file` are rejected.
 
-Command flags, exit codes, and editors: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
+Commands and flags: [commands.md](commands.md). Exit codes and editors: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
 
 ## How Pogo asks
 

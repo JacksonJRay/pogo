@@ -1,6 +1,6 @@
 # Using Pogo
 
-Command reference: [reference.md](reference.md). Agents: [agents.md](agents.md). Docker: [docker.md](docker.md). Security details: [security.md](security.md).
+Commands: [commands.md](commands.md). Reference: [reference.md](reference.md). Agents: [agents.md](agents.md). Docker: [docker.md](docker.md). Security details: [security.md](security.md).
 
 Build Pogo with `make build`, then add the repository directory to `PATH`.
 
