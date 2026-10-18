@@ -105,3 +105,4 @@ guarantee absence of undiscovered vulnerabilities or application-logic bugs.
 The retained OpenPGP advisory applies to unused packages in the same module;
 removing a vetted Argon2 implementation to clear that module warning requires
 separate cryptographic review. Usage guidance is in [docs/usability.md](../docs/usability.md).
+The threat model and file format are in [docs/security.md](../docs/security.md).

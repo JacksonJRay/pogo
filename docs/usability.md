@@ -1,5 +1,7 @@
 # Using Pogo
 
+Commands: [commands.md](commands.md). Reference: [reference.md](reference.md). Agents: [agents.md](agents.md). Docker: [docker.md](docker.md). Security details: [security.md](security.md).
+
 Build Pogo with `make build`, then add the repository directory to `PATH`.
 
 ```bash
@@ -31,7 +33,8 @@ Use an absolute `-f` path in services. `--env NAME` selects an environment secti
 
 Run `pogo help` or `pogo help run` for command examples. Missing-file errors show
 creation commands. Exit 2 means decryption failed. Exit 4 on create means the
-passphrase is shorter than 15 characters, or empty or only whitespace.
+passphrase is shorter than 15 characters, empty or only whitespace, or the two
+entries did not match.
 `--allow-short-passphrase` skips the 15-character minimum when you create a
 passphrase and still rejects a blank passphrase. Opening an existing file
 rejects only an empty passphrase with exit 4. After startup, the
