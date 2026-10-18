@@ -244,7 +244,7 @@ def convert(text: str, dest: Path) -> None:
     plain = WORK / "plain.env"
     plain.write_text(text)
     proc = subprocess.run(
-        [POGO, "convert", str(plain), "-f", str(dest), "--key-env", "POGO_PASSPHRASE", "--force"],
+        [POGO, "convert", str(plain), "-f", str(dest), "--key-env", "POGO_PASSPHRASE", "--force", "--keep-original"],
         check=False,
         text=True,
         stdout=subprocess.PIPE,

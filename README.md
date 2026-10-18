@@ -27,6 +27,6 @@ pogo edit
 pogo run -- npm start
 ```
 
-`convert` leaves `.env` and prints the `rm` command.
+`convert` writes `.env.enc`, checks that it decrypts, then asks `Delete the original .env? [y/N]`. Press Enter to keep the file. Only `y` or `yes` deletes it. With no terminal, the file stays. `--delete-original` and `--keep-original` skip the question. Deleting is a normal remove, not a secure wipe.
 
 MIT. [LICENSE](LICENSE).

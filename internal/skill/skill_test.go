@@ -37,6 +37,11 @@ func TestAgentRules(t *testing.T) {
 		"Do not enter a Git password or a personal access token",
 		"Do not pass `--allow-short-passphrase` unless the user explicitly asks",
 		"printf '%s' \"$SHORT_PASS\" | pogo convert .env --key-stdin --allow-short-passphrase",
+		"Delete the original .env? [y/N]",
+		"--delete-original",
+		"--keep-original",
+		"not a secure wipe",
+		"controlling terminal",
 	} {
 		if !bytes.Contains(Document, []byte(phrase)) {
 			t.Errorf("skill rules missing %q", phrase)

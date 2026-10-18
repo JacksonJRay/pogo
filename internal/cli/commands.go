@@ -248,12 +248,15 @@ func encryptLike(opts options, convert bool) (int, error) {
 	if err := writeEncrypted(enc, pass, data); err != nil {
 		return 1, err
 	}
-	if convert {
-		fmt.Fprintf(os.Stderr, "Wrote %s\nLeft the plaintext file in place: %s\nAfter you confirm the encrypted file works, delete the plaintext yourself:\n  rm %s\n", enc, plainPath, quotePath(plainPath))
-	} else {
+	if !convert {
 		fmt.Fprintf(os.Stderr, "Wrote %s\nLeft the plaintext file in place: %s\nDelete it yourself after you have checked the encrypted file:\n  rm %s\n", enc, plainPath, quotePath(plainPath))
+		return 0, nil
 	}
-	return 0, nil
+	// Check the bytes on disk before offering to delete the only plaintext copy.
+	if err := verifySealed(enc, pass, data); err != nil {
+		return 1, err
+	}
+	return finishConvert(opts, plainPath, enc)
 }
 
 func cmdDecrypt(opts options) (int, error) {

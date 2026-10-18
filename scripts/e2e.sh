@@ -202,13 +202,15 @@ echo "== exit codes and key supply =="
 ( cd "$WORK" && expect_code "missing-enc" 1 "$POGO" run --key-env POGO_PASSPHRASE -- true ) || true
 require_text "missing-enc-next-step" "$WORK/err" "No .env.enc found in this folder." "pogo init" "pogo convert .env"
 expect_code "short-passphrase" 4 env POGO_SHORT=short "$POGO" convert "$WORK/plain.env" -f "$WORK/short.enc" --key-env POGO_SHORT || true
-expect_code "convert" 0 "$POGO" convert "$WORK/plain.env" -f "$WORK/app.enc" --key-env POGO_PASSPHRASE || true
+# setsid drops the controlling terminal, so convert keeps the plaintext
+# instead of asking. A terminal session would hang here waiting for y/N.
+expect_code "convert" 0 setsid "$POGO" convert "$WORK/plain.env" -f "$WORK/app.enc" --key-env POGO_PASSPHRASE || true
 if cmp -s "$WORK/plain.env" "$WORK/plain.before"; then
   pass "convert-leaves-plaintext"
 else
   fail "convert-leaves-plaintext"
 fi
-require_text "convert-reminder" "$WORK/err" "rm "
+require_text "convert-reminder" "$WORK/err" "No terminal" "Left the plaintext" "rm " "not a secure wipe" "Checked that"
 expect_code "overwrite-refused" 1 "$POGO" convert "$WORK/plain.env" -f "$WORK/app.enc" --key-env POGO_PASSPHRASE || true
 expect_code "conflict-f" 1 "$POGO" edit "$WORK/other.enc" -f "$WORK/app.enc" --key-env POGO_PASSPHRASE || true
 expect_code "decrypt-wrong-key" 2 "$POGO" decrypt -f "$WORK/app.enc" --key-env POGO_PASSPHRASE_V2 || true
@@ -286,7 +288,7 @@ else
   pass "allow-short-init-stdout-clean"
 fi
 
-expect_code "allow-short-convert" 0 env POGO_SHORT=short "$POGO" convert "$WORK/plain.env" -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase || true
+expect_code "allow-short-convert" 0 env POGO_SHORT=short setsid "$POGO" convert "$WORK/plain.env" -f "$WORK/short.enc" --key-env POGO_SHORT --allow-short-passphrase || true
 require_text "allow-short-convert-warning" "$WORK/err" "short passphrases are much easier to guess"
 if grep -q "easier to guess" "$WORK/out"; then
   fail "allow-short-convert warning on stdout"
@@ -449,10 +451,10 @@ else
 fi
 
 set +e
-timeout 180 python3 "$PTY" "short-pass" "short-pass" -- "$POGO" convert "$WORK/plain.env" -f "$WORK/pty-short.enc" --allow-short-passphrase >"$WORK/pty-allow.out" 2>"$WORK/pty-allow.err"
+timeout 180 python3 "$PTY" "short-pass" "short-pass" "n" -- "$POGO" convert "$WORK/plain.env" -f "$WORK/pty-short.enc" --allow-short-passphrase >"$WORK/pty-allow.out" 2>"$WORK/pty-allow.err"
 pty_ec=$?
 set +e
-if [[ "$pty_ec" -eq 0 ]] && grep -q "Enter passphrase: " "$WORK/pty-allow.out" && grep -q "short passphrases are much easier to guess" "$WORK/pty-allow.out" && ! grep -q "short-pass" "$WORK/pty-allow.out"; then
+if [[ "$pty_ec" -eq 0 ]] && grep -q "New passphrase for " "$WORK/pty-allow.out" && grep -q "short passphrases are much easier to guess" "$WORK/pty-allow.out" && grep -F -q "[y/N]" "$WORK/pty-allow.out" && ! grep -q "short-pass" "$WORK/pty-allow.out" && cmp -s "$WORK/plain.env" "$WORK/plain.before"; then
   pass "allow-short-pty"
 else
   fail "allow-short-pty exit $pty_ec $(tr '\n' ' ' <"$WORK/pty-allow.out" | head -c 400) $(tr '\n' ' ' <"$WORK/pty-allow.err" | head -c 200)"
@@ -536,12 +538,67 @@ else
 fi
 stop_servers
 
+echo "== convert delete prompt =="
+cp "$WORK/plain.env" "$WORK/del-yes.env"
+set +e
+timeout 180 python3 "$PTY" "y" -- "$POGO" convert "$WORK/del-yes.env" -f "$WORK/del-yes.enc" --key-env POGO_PASSPHRASE >"$WORK/del-yes.out" 2>"$WORK/del-yes.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && [[ ! -e "$WORK/del-yes.env" ]] && [[ -f "$WORK/del-yes.enc" ]] && grep -F -q "[y/N]" "$WORK/del-yes.out" && grep -q "Removed " "$WORK/del-yes.out" && grep -q "not a secure wipe" "$WORK/del-yes.out" && [[ "$(head -c 4 "$WORK/del-yes.enc")" == "POGO" ]]; then
+  pass "convert-delete-yes"
+else
+  fail "convert-delete-yes exit $pty_ec $(tr '\n' ' ' <"$WORK/del-yes.out" | head -c 400)"
+fi
+
+cp "$WORK/plain.env" "$WORK/del-no.env"
+set +e
+timeout 180 python3 "$PTY" "n" -- "$POGO" convert "$WORK/del-no.env" -f "$WORK/del-no.enc" --key-env POGO_PASSPHRASE >"$WORK/del-no.out" 2>"$WORK/del-no.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && cmp -s "$WORK/del-no.env" "$WORK/plain.before" && grep -q "Left the plaintext" "$WORK/del-no.out" && ! grep -q "Removed " "$WORK/del-no.out"; then
+  pass "convert-delete-no"
+else
+  fail "convert-delete-no exit $pty_ec $(tr '\n' ' ' <"$WORK/del-no.out" | head -c 400)"
+fi
+
+cp "$WORK/plain.env" "$WORK/del-enter.env"
+set +e
+timeout 180 python3 "$PTY" "" -- "$POGO" convert "$WORK/del-enter.env" -f "$WORK/del-enter.enc" --key-env POGO_PASSPHRASE >"$WORK/del-enter.out" 2>"$WORK/del-enter.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && cmp -s "$WORK/del-enter.env" "$WORK/plain.before" && grep -q "Left the plaintext" "$WORK/del-enter.out"; then
+  pass "convert-delete-enter"
+else
+  fail "convert-delete-enter exit $pty_ec $(tr '\n' ' ' <"$WORK/del-enter.out" | head -c 400)"
+fi
+
+cp "$WORK/plain.env" "$WORK/del-notty.env"
+expect_code "convert-delete-notty" 0 setsid "$POGO" convert "$WORK/del-notty.env" -f "$WORK/del-notty.enc" --key-env POGO_PASSPHRASE || true
+if cmp -s "$WORK/del-notty.env" "$WORK/plain.before"; then
+  pass "convert-delete-notty-kept"
+else
+  fail "convert-delete-notty-kept"
+fi
+require_text "convert-delete-notty-message" "$WORK/err" "No terminal" "Left the plaintext" "not a secure wipe"
+
+printf '%s' "$PASS" >"$WORK/del-pass.bin"
+cp "$WORK/plain.env" "$WORK/del-pipe.env"
+set +e
+timeout 180 python3 "$PTY" --stdin-file "$WORK/del-pass.bin" "y" -- "$POGO" convert "$WORK/del-pipe.env" -f "$WORK/del-pipe.enc" --key-stdin >"$WORK/del-pipe.out" 2>"$WORK/del-pipe.err"
+pty_ec=$?
+set +e
+if [[ "$pty_ec" -eq 0 ]] && [[ ! -e "$WORK/del-pipe.env" ]] && [[ -f "$WORK/del-pipe.enc" ]] && grep -F -q "[y/N]" "$WORK/del-pipe.out" && grep -q "Removed " "$WORK/del-pipe.out" && ! grep -q "$PASS" "$WORK/del-pipe.out"; then
+  pass "convert-delete-key-stdin-yes"
+else
+  fail "convert-delete-key-stdin-yes exit $pty_ec $(tr '\n' ' ' <"$WORK/del-pipe.out" | head -c 400) $(tr '\n' ' ' <"$WORK/del-pipe.err" | head -c 200)"
+fi
+
 echo "== shared env demo =="
 DEMO="$ROOT/examples/shared-env-demo"
 rm -f "$DEMO/.env" "$DEMO/.env.enc"
 cp "$DEMO/.env.example" "$DEMO/.env"
 pushd "$DEMO" >/dev/null
-expect_code "shared-convert" 0 "$POGO" convert .env --key-env POGO_PASSPHRASE || true
+expect_code "shared-convert" 0 setsid "$POGO" convert .env --key-env POGO_PASSPHRASE || true
 popd >/dev/null
 if [[ -f "$DEMO/.env" ]]; then
   pass "shared-plaintext-kept-until-delete"

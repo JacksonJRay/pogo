@@ -1,6 +1,6 @@
 # Commands
 
-One section per command in Pogo 1.0.4. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
+One section per command in Pogo 1.0.5. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
 
 `pogo` with no command prints the quick start and exits 1. `pogo help` prints the same page and exits 0.
 
@@ -89,9 +89,11 @@ pogo decrypt --env production
 
 `pogo convert <plaintext.env> [file]`
 
-Encrypt an existing env file. Same rules as `encrypt`: the original stays, Pogo prints `rm`, and the two paths must differ. `--force` replaces an existing destination. `init` and `convert` are two ways to create the encrypted file. The second one needs `--force` if `.env.enc` is already there.
+Encrypt an existing env file. The two paths must differ. `--force` replaces an existing destination. `init` and `convert` are two ways to create the encrypted file. The second one needs `--force` if `.env.enc` is already there.
 
-Flags: `-f` / `--file`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--force`.
+After the encrypted file is written, Pogo reads it back and decrypts it. Only then does it ask `Delete the original <file>? [y/N]` on the controlling terminal. The default is No. Only `y` or `yes` deletes the plaintext. Enter, any other answer, EOF, and a session with no terminal keep the file. The question is not read from stdin, so it still works when `--key-stdin` is a pipe. `--delete-original` removes the plaintext without asking. `--keep-original` leaves it and does not ask. A failed conversion or a failed decrypt check never deletes the plaintext. The remove is a normal delete, not a secure wipe. `encrypt` does not ask and does not delete.
+
+Flags: `-f` / `--file`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--force`, `--delete-original`, `--keep-original`.
 
 ```bash
 pogo convert .env
@@ -168,7 +170,7 @@ pogo help docker
 
 `pogo version`
 
-Print `pogo` and the running version (this tree: `pogo 1.0.4`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
+Print `pogo` and the running version (this tree: `pogo 1.0.5`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
 
 ```bash
 pogo version

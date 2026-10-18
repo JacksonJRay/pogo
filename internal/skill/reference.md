@@ -15,7 +15,7 @@ Words used below:
 | `pogo run [file] -- <command...>` | Decrypt and exec the command with the variables set |
 | `pogo encrypt <plaintext> [file]` | Encrypt a plaintext file |
 | `pogo decrypt [file] [outfile]` | Decrypt to the terminal or to a file (prints a warning) |
-| `pogo convert <plaintext.env> [file]` | Encrypt an existing `.env`. The original file is left in place |
+| `pogo convert <plaintext.env> [file]` | Encrypt an existing `.env`. After the file decrypts, asks `Delete the original <file>? [y/N]` on the controlling terminal. Default is No |
 | `pogo rekey [file]` | Change the passphrase |
 | `pogo skill` | Print this document |
 | `pogo help [command]` | Show help. Same as `pogo <command> --help` and `pogo <command> -h` |
@@ -40,6 +40,8 @@ Other flags:
 | `--env NAME` | `run`, `decrypt` | Use the `[NAME]` section, merged over the top of the file |
 | `--no-override` | `run` | Keep variables that are already set. By default the encrypted file wins |
 | `--force` | `init`, `encrypt`, `convert`, `decrypt` | Replace an existing destination file |
+| `--delete-original` | `convert` | Delete the plaintext after the encrypted file is written and checked. No question. A normal remove, not a secure wipe. Kept if conversion or the decrypt check fails |
+| `--keep-original` | `convert` | Leave the plaintext file and do not ask. Use this when a script has a terminal and must keep the file |
 | `--new-key-env` | `rekey` | Read the new passphrase from an environment variable. `--new-key-file` was removed |
 | `--list` | `skill` | Print framework names, one per line |
 | `--framework NAME` | `skill` | Print only that framework's section |

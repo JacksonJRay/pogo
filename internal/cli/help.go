@@ -7,7 +7,7 @@ func globalHelp() string {
 		name: "pogo",
 		quick: `Quick start
 
-1. Encrypt an existing .env file. The original .env stays where it is:
+1. Encrypt an existing .env file. Pogo asks before deleting the original, and the default is to keep it:
      pogo convert .env
 
 2. Or create a new encrypted file and edit it in your editor:
@@ -303,26 +303,36 @@ func convertHelp() commandDoc {
 	return commandDoc{
 		name: "convert",
 		purpose: `Encrypt an existing plaintext .env into a Pogo file.
-The original file is not deleted and not modified. After you have checked the encrypted file, delete the plaintext yourself.
+Pogo writes the encrypted file, reads it back, and decrypts it. Only then does it ask whether to delete the plaintext.
+The question is "Delete the original <file>? [y/N]". The default is No. Only y or yes deletes the file. Enter, any other answer, and EOF keep it.
+The question is read from the controlling terminal, so it still works when --key-stdin is a pipe. If there is no terminal, Pogo keeps the file and does not ask.
+--delete-original deletes without asking. --keep-original leaves the file and does not ask.
+The original file is not modified when it is kept. Deleting it is a normal remove, not a secure wipe.
 You type the new passphrase twice, unless you pass --key-env or --key-stdin. Pogo will not read a passphrase from a file.`,
 		synopsis: "pogo convert <plaintext.env> [file]",
 		args: `plaintext.env    Required. The existing env file to read.
 file             Optional encrypted output. Default: .env.enc
                  Same as -f. If you pass both and they differ, Pogo stops.`,
-		flags: commonFlags() + forceFlag(),
+		flags: commonFlags() + forceFlag() + convertDeleteFlags(),
 		examples: `pogo convert .env
 pogo convert .env -f .env.production.enc
-printf '%s' "$POGO_PASS" | pogo convert .env --key-stdin`,
-		workflows: `Convert, run the app, then delete the plaintext:
+printf '%s' "$POGO_PASS" | pogo convert .env --key-stdin
+pogo convert .env --delete-original
+pogo convert .env --keep-original`,
+		workflows: `Convert and answer the question. Press Enter to keep the plaintext:
   pogo convert .env
+  Delete the original .env? [y/N]
   pogo run -- npm start
-  rm .env
+
+A script that must not ask. --keep-original leaves the file. --delete-original removes it after the decrypt check:
+  pogo convert .env --keep-original
+  printf '%s' "$POGO_PASS" | pogo convert .env --key-stdin --delete-original
 
 Custom output name:
   pogo convert .env -f .env.production.enc
   pogo run -f .env.production.enc -- ./server`,
 		frameworks: "Works for any project's .env. The encrypted file is what `pogo run` reads. The app does not need a Pogo library.",
-		security:   securityNotes() + "\nPogo will not remove the plaintext .env. Leaving it on disk keeps the secrets exposed. Delete it after you have verified the encrypted file.\n",
+		security:   securityNotes() + "\nAfter the encrypted file is written and checked, Pogo can remove the plaintext with a normal delete. That is not a secure wipe. Copies can remain on disk. The default is to keep the file. A session with no terminal keeps the file. --delete-original is the only way to delete without a yes answer.\n",
 		exits:      exitNotes(),
 	}
 }
@@ -426,7 +436,7 @@ func upgradeHelp() commandDoc {
 		name: "upgrade",
 		purpose: `Replace this pogo binary with a release from https://github.com/JacksonJRay/pogo/releases.
 Pogo reads the latest GitHub release, or the release named by --version. It downloads pogo-<os>-<arch> and SHA256SUMS over HTTPS, checks the SHA256, and replaces the running binary only after the new file's version command prints the expected version.
-If this binary is already the latest, Pogo prints "pogo 1.0.4 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
+If this binary is already the latest, Pogo prints "pogo 1.0.5 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
 A terminal shows the versions and asks "Install? [y/N]". With no terminal, pass --yes, or Pogo exits 1 and tells you to add it. --check does not install.
 upgrade does not ask for a passphrase and does not read an env file.
 POGO_UPGRADE_API replaces the GitHub API base. It is for tests. Leave it unset. Plain HTTP is refused except for a localhost test server.
@@ -480,7 +490,7 @@ There is no telemetry. upgrade is the only command that uses the network.
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.4".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.5".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -823,6 +833,22 @@ func forceFlag() string {
 	return `
 --force
     Replace an existing destination file. Default: off. Without --force, Pogo refuses to overwrite.
+`
+}
+
+func convertDeleteFlags() string {
+	return `
+--delete-original
+    After the encrypted file is written and checked, delete the plaintext file without asking.
+    This is a normal remove, not a secure wipe. Copies can remain on disk.
+    If the encrypted file cannot be written or does not decrypt, the plaintext is kept.
+    Default: off.
+
+--keep-original
+    Leave the plaintext file in place and do not ask.
+    Use this when a terminal is allocated and a script must keep the file.
+    Default: off. With no terminal, Pogo already keeps the file.
+    Do not pass this together with --delete-original.
 `
 }
 
