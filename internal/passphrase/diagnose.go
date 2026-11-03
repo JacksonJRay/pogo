@@ -24,7 +24,7 @@ type Diagnosis struct {
 // Diagnose reports which backend would be used. It does not run a helper and
 // it does not POST to the editor, so nothing is shown to the person.
 func Diagnose() Diagnosis {
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if term.IsTerminal(int(os.Stdin.Fd())) && !useMacDialogInsteadOfTerminal() {
 		debug("stdin is a terminal; the echo-off prompt will be used")
 		detail := "Pogo will ask on this terminal with echo off and wait until you type or press Ctrl-C."
 		if ttyTimeout() > 0 {
@@ -36,7 +36,12 @@ func Diagnose() Diagnosis {
 			Detail:    detail + promptCoverage,
 		}
 	}
-	debug("stdin is not a terminal")
+	terminalFallback := term.IsTerminal(int(os.Stdin.Fd()))
+	if terminalFallback {
+		debug("agent owns the terminal; asking out of band")
+	} else {
+		debug("stdin is not a terminal")
+	}
 	var checks []string
 	note := func(msg string) {
 		checks = append(checks, msg)
@@ -71,6 +76,31 @@ func Diagnose() Diagnosis {
 			Available: true,
 			Backend:   "editor prompt",
 			Detail:    "Pogo will ask in the editor, in the box at the top of the window. code-server and VS Code show Pogo's prompt. Cursor titles the box with the file name. An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that box. Do not collect the passphrase." + promptCoverage,
+			Checks:    checks,
+		}
+	}
+
+	if ok, skip := macDialogAvailable(); ok {
+		debug("macOS dialog is available")
+		return Diagnosis{
+			Available: true,
+			Backend:   MacDialogLabel,
+			Detail:    "Pogo will ask with a macOS dialog titled \"" + MacDialogTitle + "\". An agent runs `pogo run -- <command>` with no key flags and tells the person to watch for that window. Do not collect the passphrase." + promptCoverage,
+			Checks:    checks,
+		}
+	} else if skip != "" {
+		note(skip)
+	}
+	if terminalFallback {
+		debug("stdin is a terminal; the echo-off prompt will be used")
+		detail := "Pogo will ask on this terminal with echo off and wait until you type or press Ctrl-C."
+		if ttyTimeout() > 0 {
+			detail = "Pogo will ask on this terminal with echo off and stop after POGO_TTY_TIMEOUT."
+		}
+		return Diagnosis{
+			Available: true,
+			Backend:   "terminal",
+			Detail:    detail + promptCoverage,
 			Checks:    checks,
 		}
 	}

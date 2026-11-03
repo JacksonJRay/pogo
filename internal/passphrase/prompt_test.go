@@ -17,6 +17,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestMain(m *testing.M) {
+	macDialogOff = true
+	os.Exit(m.Run())
+}
+
 func quietEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

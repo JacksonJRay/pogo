@@ -436,7 +436,7 @@ func upgradeHelp() commandDoc {
 		name: "upgrade",
 		purpose: `Replace this pogo binary with a release from https://github.com/JacksonJRay/pogo/releases.
 Pogo reads the latest GitHub release, or the release named by --version. It downloads pogo-<os>-<arch> and SHA256SUMS over HTTPS, checks the SHA256, and replaces the running binary only after the new file's version command prints the expected version.
-If this binary is already the latest, Pogo prints "pogo 1.0.5 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
+If this binary is already the latest, Pogo prints "pogo 1.0.6 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
 A terminal shows the versions and asks "Install? [y/N]". With no terminal, pass --yes, or Pogo exits 1 and tells you to add it. --check does not install.
 upgrade does not ask for a passphrase and does not read an env file.
 POGO_UPGRADE_API replaces the GitHub API base. It is for tests. Leave it unset. Plain HTTP is refused except for a localhost test server.
@@ -490,7 +490,7 @@ There is no telemetry. upgrade is the only command that uses the network.
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.5".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.6".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -538,10 +538,10 @@ If it prints a backend and exits 0, run the program with no key flags and tell t
 
 If it exits 1, ask the person to run that command in their own terminal, or to pipe a secret manager into --key-stdin. Do not ask them to paste the passphrase into chat. --key-env is a last resort because the value stays visible in /proc and docker inspect.
 
-A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, and desktop dialogs. Unset, that wait is two minutes. The editor section names the command. With no terminal and a GUI or remote-CLI editor, that wait defaults to 10 minutes unless POGO_EDIT_TIMEOUT is set (seconds; 0 waits until the editor exits).`,
+A real terminal waits at "Enter passphrase:" until you type or press Ctrl-C. Set POGO_TTY_TIMEOUT to a number of seconds only when a terminal was allocated and nobody is there to type. Leave it unset for normal interactive use. On macOS, an agent session asks with a window titled "Pogo Password Request" instead of that terminal. POGO_FORCE_TERMINAL=1 keeps the terminal prompt. POGO_PROMPT_TIMEOUT is a number of seconds for the editor, POGO_ASKPASS, the macOS dialog, and desktop dialogs. Unset, that wait is two minutes. The editor section names the command. With no terminal and a GUI or remote-CLI editor, that wait defaults to 10 minutes unless POGO_EDIT_TIMEOUT is set (seconds; 0 waits until the editor exits).`,
 		frameworks: "doctor is the same for every language. It does not decrypt a file and it does not start a program.",
 		security:   securityNotes() + "\ndoctor does not read, print, or store a passphrase. It does not print POGO_ASKPASS secrets or the editor auth token.\n",
-		exits: `0    A prompt is available (this terminal, POGO_ASKPASS, the editor, or a desktop askpass).
+		exits: `0    A prompt is available (this terminal, POGO_ASKPASS, the editor, a macOS dialog, or a desktop askpass).
 1    No prompt is available, or the command was used wrong.
 `,
 	}

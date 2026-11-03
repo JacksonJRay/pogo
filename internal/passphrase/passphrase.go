@@ -2,7 +2,9 @@
 //
 // Interactive entry uses a terminal with echo disabled. When stdin is not a
 // terminal and no key flag is set, Pogo asks through a prompt already on the
-// machine (POGO_ASKPASS, the editor Git prompt, then a desktop askpass).
+// machine (POGO_ASKPASS, the editor Git prompt, a macOS dialog, then a
+// desktop askpass). An agent that owns the terminal on macOS gets the dialog
+// too, so the person can answer it.
 // An environment variable is the other non-interactive source. Stdin is a
 // pipe or a terminal: a pipe is read until EOF and trimmed, and a terminal
 // prompts on stderr, turns echo off, and reads one line. Pogo does not read
@@ -206,10 +208,19 @@ func readStdinPipe() ([]byte, error) {
 // readFromUser prompts on a terminal, or through an out-of-band backend
 // when stdin is not a terminal.
 func readFromUser(prompt, file string, kind PromptKind) ([]byte, error) {
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+	if interactive && !useMacDialogInsteadOfTerminal() {
 		return readInteractive(prompt)
 	}
-	return promptOutOfBand(prompt, file, kind)
+	pass, err := promptOutOfBand(prompt, file, kind)
+	if !interactive {
+		return pass, err
+	}
+	var np *NoPromptError
+	if errors.As(err, &np) {
+		return readInteractive(prompt)
+	}
+	return pass, err
 }
 
 // ttyTimeout is opt-in. Unset or invalid means a real terminal waits until

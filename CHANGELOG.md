@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-03 — 1.0.6
+
+- On macOS, when stdin is not a terminal, Pogo asks with a native dialog titled `Pogo Password Request` if the person is logged into the GUI. `osascript` is already on the machine. No `DISPLAY` or Wayland socket is required, and no Linux askpass is installed. The dialog text names the file. Cancel stops. A timeout stops and does not open another dialog. An SSH session does not show the dialog on the Mac's screen. If the dialog cannot be shown, Pogo tries the next prompt and says so.
+- An agent that owns the terminal (`OPENCODE`, `AGENT=1`, `CLAUDECODE`, `CLAUDE_CODE`, `CURSOR_AGENT`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `GEMINI_CLI`, or `AIDER`) gets that same window, so the person can answer it. `POGO_FORCE_TERMINAL=1` keeps the echo-off terminal prompt. A person at a normal terminal still types there.
+- `pogo doctor` reports `macOS dialog` when that window would be used. Stderr says `Asking for the passphrase with macOS dialog` and `The window is titled "Pogo Password Request".`
+
 ## 2026-10-18 — 1.0.5
 
 - `pogo convert` writes the encrypted file, reads it back, and decrypts it before it will remove the plaintext. It then asks `Delete the original <file>? [y/N]` on the controlling terminal. The default is No. Only `y` or `yes` deletes the file. Enter, any other answer, EOF, and a session with no terminal keep it. The question is not read from stdin, so it still works when `--key-stdin` is a pipe. `--delete-original` removes the plaintext without asking. `--keep-original` leaves it and does not ask. A failed conversion or a failed decrypt check never deletes the plaintext. The remove is a normal delete, not a secure wipe. `encrypt` still does not ask and does not delete.

@@ -7,7 +7,7 @@ import (
 )
 
 // version is the release printed by `pogo version`.
-var version = "1.0.5"
+var version = "1.0.6"
 
 func main() {
 	os.Exit(cli.Main(os.Args[1:], version))

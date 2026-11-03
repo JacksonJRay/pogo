@@ -46,7 +46,7 @@ Never place the passphrase in shell history, logs, version control, or a file.
 
 ## Rules for agents
 - Run `pogo doctor` before starting a program. It does not ask for a passphrase. `pogo doctor` covers init, edit, run, encrypt, decrypt, convert, and rekey.
-- If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
+- If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. On macOS that window is titled `Pogo Password Request`. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
 - To change the env file, run `pogo edit` with no key flags, tell the person a tab will open, and wait until pogo exits. Do not ask the person to paste values into chat.
 - To see if a newer pogo exists, run `pogo upgrade --check`. To install it from an agent session, run `pogo upgrade --yes`. Do not downgrade unless the person names a version.
 - If doctor exits 1, or Pogo prints `pogo: no way to ask for the passphrase here`, ask the person to run the command in their own terminal, or to pipe a secret manager into `--key-stdin`. Do not ask for the passphrase in chat. If you are an AI agent: do not ask the person to paste the passphrase into chat; ask them to run this command in their own terminal. Do not guess, try, or search the filesystem for a passphrase. Do not suggest printf 'PASSPHRASE' | pogo ..., because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI instead.

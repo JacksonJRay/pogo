@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
 	"pogo/internal/securemem"
 )
 
@@ -196,7 +197,11 @@ func SetAskpassDirsForTest(dirs []string) func() {
 }
 
 func promptOutOfBand(prompt, file string, kind PromptKind) ([]byte, error) {
-	debug("stdin is not a terminal")
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		debug("agent owns the terminal; asking out of band")
+	} else {
+		debug("stdin is not a terminal")
+	}
 	text := withFile(prompt, file)
 	var checks []string
 	note := func(msg string) {
@@ -236,6 +241,22 @@ func promptOutOfBand(prompt, file string, kind PromptKind) ([]byte, error) {
 		} else {
 			note("editor prompt failed")
 		}
+	}
+
+	if ok, skip := macDialogAvailable(); ok {
+		pass, err := askMacDialog(text)
+		if finishedPrompt(err) {
+			return pass, err
+		}
+		if errors.Is(err, errDisplay) {
+			note(MacDialogLabel + " could not be shown")
+		} else if errors.Is(err, errNotStarted) {
+			note(MacDialogLabel + " could not be started")
+		} else {
+			note(MacDialogLabel + " failed")
+		}
+	} else if skip != "" {
+		note(skip)
 	}
 
 	if ok, skip := displayDecision(); !ok {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"pogo/internal/passphrase"
 )
 
 func TestMain(m *testing.M) {
@@ -17,6 +19,7 @@ func TestMain(m *testing.M) {
 	deleteAnswerReader = func() (io.ReadWriteCloser, error) {
 		return nil, errors.New("no controlling terminal")
 	}
+	passphrase.SetMacDialogForTest(true)
 	os.Exit(m.Run())
 }
 
