@@ -14,7 +14,8 @@ Words used below:
 | `pogo edit [file]` | Decrypt, open your editor, encrypt again, delete the temp file |
 | `pogo run [file] -- <command...>` | Decrypt and exec the command with the variables set |
 | `pogo encrypt <plaintext> [file]` | Encrypt a plaintext file |
-| `pogo decrypt [file] [outfile]` | Decrypt to the terminal or to a file (prints a warning) |
+| `pogo decrypt [file] [outfile]` | Decrypt to the terminal or to a file (prints a warning). `-o` writes a new plaintext file. `pogo decrypt .env.enc -f .env` writes `.env` |
+| `pogo keys [file]` | Print variable names only. Values are not printed. `[section]` lines are section names |
 | `pogo convert <plaintext.env> [file]` | Encrypt an existing `.env`. After the file decrypts, asks `Delete the original <file>? [y/N]` on the controlling terminal. Default is No |
 | `pogo rekey [file]` | Change the passphrase |
 | `pogo skill` | Print this document |
@@ -37,7 +38,8 @@ Other flags:
 
 | Flag | Commands | Meaning |
 |---|---|---|
-| `--env NAME` | `run`, `decrypt` | Use the `[NAME]` section, merged over the top of the file |
+| `--env NAME` | `run`, `decrypt`, `keys` | Use the `[NAME]` section, merged over the top of the file. `keys` prints names only |
+| `-o`, `--output PATH` | `decrypt` | Write decrypted plaintext to this new file. `-` prints to the terminal. Refuses to overwrite unless `--force` |
 | `--no-override` | `run` | Keep variables that are already set. By default the encrypted file wins |
 | `--force` | `init`, `encrypt`, `convert`, `decrypt` | Replace an existing destination file |
 | `--delete-original` | `convert` | Delete the plaintext after the encrypted file is written and checked. No question. A normal remove, not a secure wipe. Kept if conversion or the decrypt check fails |
@@ -98,7 +100,7 @@ The 15-character minimum is checked only when creating a passphrase (`init`, `en
 
 `--allow-short-passphrase` skips that minimum. One character that is not only whitespace is enough. Empty or whitespace-only is still rejected (exit 4). The flag prints one warning on stderr (`short passphrases are much easier to guess`) and does not write that warning to stdout. It applies to the new passphrase on `rekey`. It works with the prompt, `--key-stdin`, and `--key-env`.
 
-Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) does not apply the minimum. Any passphrase whose length is greater than 0 is tried. Only an empty passphrase is rejected (exit 4). A wrong passphrase still exits 2. `--allow-short-passphrase` is accepted on those commands and has no effect, and the warning is not printed. You do not pass the flag again to open a file that was created with a short passphrase. `edit` re-saves with the same passphrase.
+Opening an existing file (`run`, `decrypt`, `keys`, `edit`, and the current passphrase for `rekey`) does not apply the minimum. Any passphrase whose length is greater than 0 is tried. Only an empty passphrase is rejected (exit 4). A wrong passphrase still exits 2. `--allow-short-passphrase` is accepted on those commands and has no effect, and the warning is not printed. You do not pass the flag again to open a file that was created with a short passphrase. `edit` re-saves with the same passphrase.
 
 Do not pass `--allow-short-passphrase` unless the user explicitly asks for it.
 
@@ -126,6 +128,8 @@ API_KEY=dev-value
 pogo run -- npm start                  # PORT and API_KEY=shared
 pogo run --env production -- npm start # PORT and API_KEY=prod-value
 pogo decrypt --env dev                 # prints the merged dev view
+pogo keys                              # names only, no values
+pogo keys --env dev                    # names pogo run --env dev would set
 ```
 
 Rules:

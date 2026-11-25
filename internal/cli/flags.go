@@ -8,12 +8,13 @@ import (
 const defaultEnc = ".env.enc"
 
 var commandNames = []string{
-	"init", "edit", "run", "encrypt", "decrypt", "convert", "rekey", "skill", "help", "version", "upgrade", "docker", "doctor",
+	"init", "edit", "run", "encrypt", "decrypt", "keys", "convert", "rekey", "skill", "help", "version", "upgrade", "docker", "doctor",
 }
 
 // valueFlags take an argument. Bool flags do not.
 var valueFlags = map[string]bool{
 	"-f": true, "--file": true,
+	"-o": true, "--output": true,
 	"--key-env":     true,
 	"--env":         true,
 	"--new-key-env": true,
@@ -34,7 +35,8 @@ var commandFlags = map[string][]string{
 	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase"},
 	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--no-override"},
 	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
-	"decrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--force"},
+	"decrypt": {"-f", "--file", "-o", "--output", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--force"},
+	"keys":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env"},
 	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force", "--delete-original", "--keep-original"},
 	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--new-key-env"},
 	"skill":   {"--list", "--framework"},
@@ -48,6 +50,8 @@ var commandFlags = map[string][]string{
 type options struct {
 	file           string
 	fileSet        bool
+	output         string
+	outputSet      bool
 	keyEnv         string
 	keyStdin       bool
 	allowShort     bool
@@ -244,7 +248,7 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 		if cmd != "" && !flagAllowed(cmd, canon) {
 			return options{}, nil, false, flagNotForCommand(canon, cmd)
 		}
-		if seen[canon] || (canon == "-f" && seen["--file"]) || (canon == "--file" && seen["-f"]) {
+		if seen[canon] || (canon == "-f" && seen["--file"]) || (canon == "--file" && seen["-f"]) || (canon == "-o" && seen["--output"]) || (canon == "--output" && seen["-o"]) {
 			return options{}, nil, false, fmt.Errorf("You passed %s more than once.\nUse it once. Run `pogo %s --help` for the flags this command accepts.", canon, orGlobal(cmd))
 		}
 		seen[canon] = true
@@ -271,6 +275,9 @@ func parseFlags(args []string, cmd string) (options, []string, bool, error) {
 		case "-f", "--file":
 			opts.file = val
 			opts.fileSet = true
+		case "-o", "--output":
+			opts.output = val
+			opts.outputSet = true
 		case "--key-env":
 			opts.keyEnv = val
 		case "--key-stdin":
@@ -346,6 +353,8 @@ func exampleFor(flag string) string {
 	switch flag {
 	case "-f", "--file":
 		return "--file"
+	case "-o", "--output":
+		return "--output .env"
 	case "--key-env":
 		return "--key-env"
 	case "--env":
@@ -375,8 +384,14 @@ func splitEq(a string) (name, val string, has bool) {
 	if strings.HasPrefix(a, "-f=") {
 		return "-f", a[3:], true
 	}
+	if strings.HasPrefix(a, "-o=") {
+		return "-o", a[3:], true
+	}
 	if strings.HasPrefix(a, "-f") && len(a) > 2 {
 		return "-f", a[2:], true
+	}
+	if strings.HasPrefix(a, "-o") && len(a) > 2 {
+		return "-o", a[2:], true
 	}
 	return a, "", false
 }
@@ -400,6 +415,9 @@ func flagAllowed(cmd, flag string) bool {
 	// -f and --file are aliases
 	if flag == "-f" {
 		return flagAllowed(cmd, "--file")
+	}
+	if flag == "-o" {
+		return flagAllowed(cmd, "--output")
 	}
 	return false
 }
@@ -506,17 +524,33 @@ func plainAndEnc(flag string, flagSet bool, pos []string, usage string) (string,
 	return plain, enc, nil
 }
 
-func decryptPaths(flag string, flagSet bool, pos []string) (enc, outfile string, toStdout bool, err error) {
-	if len(pos) > 2 {
-		return "", "", false, fmt.Errorf("Unexpected extra argument %q.\nUsage: pogo decrypt [file] [outfile]\nExample: pogo decrypt -f .env.enc ./secrets.env", pos[2])
+func decryptPaths(flag string, flagSet bool, pos []string, output string, outputSet bool) (enc, outfile string, toStdout bool, err error) {
+	if outputSet && len(pos) > 1 {
+		return "", "", false, fmt.Errorf("Unexpected extra argument %q.\n-o already names the plaintext file.\nExample: pogo decrypt -f .env.enc -o .env", pos[1])
 	}
-	if flagSet {
+	if len(pos) > 2 {
+		return "", "", false, fmt.Errorf("Unexpected extra argument %q.\nUsage: pogo decrypt [file] [outfile]\nExample: pogo decrypt -f .env.enc -o ./secrets.env", pos[2])
+	}
+	if outputSet {
+		enc, err = oneEnc(flag, flagSet, pos)
+		if err != nil {
+			return "", "", false, err
+		}
+		outfile = output
+	} else if flagSet {
 		enc = flag
 		switch len(pos) {
 		case 0:
 			toStdout = true
 		case 1:
-			outfile = pos[0]
+			// pogo decrypt .env.enc -f .env writes .env.
+			// pogo decrypt -f .env.enc ./secrets.env still treats -f as the encrypted file.
+			if pos[0] != flag && strings.HasSuffix(pos[0], ".enc") && !strings.HasSuffix(flag, ".enc") {
+				enc = pos[0]
+				outfile = flag
+			} else {
+				outfile = pos[0]
+			}
 		case 2:
 			if pos[0] != flag {
 				return "", "", false, conflict(flag, pos[0])

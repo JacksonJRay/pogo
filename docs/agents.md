@@ -6,6 +6,17 @@ Run `pogo doctor`, then `pogo run -- <command>` with no key flags, and tell the 
 
 Do not guess, try, or search the filesystem for a passphrase. Do not suggest `printf 'PASSPHRASE' | pogo ...`, because that stores the passphrase in shell history. Read it from a secret manager or keychain CLI instead. There is no key file. `--key-file` and `--new-key-file` are rejected.
 
+To see which variables are in the encrypted file, run `pogo keys`. Stdout is names only. A line like `[production]` is a section name, not a variable. `pogo keys --env NAME` prints the names `pogo run --env NAME` would set. Values are not printed. Do not run `pogo decrypt` just to learn the names.
+
+To write a plaintext file, pass `-o` or use `-f` as the new file when the encrypted path ends in `.enc`:
+
+```bash
+pogo decrypt -f .env.enc -o .env
+pogo decrypt .env.enc -f .env
+```
+
+Pogo refuses to overwrite an existing file unless you pass `--force`. Prefer `pogo run` so the values stay in memory.
+
 Commands and flags: [commands.md](commands.md). Exit codes and editors: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
 
 ## How Pogo asks

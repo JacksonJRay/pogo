@@ -1,10 +1,10 @@
 # Commands
 
-One section per command in Pogo 1.0.6. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
+One section per command in Pogo 1.0.7. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
 
 `pogo` with no command prints the quick start and exits 1. `pogo help` prints the same page and exits 0.
 
-The default encrypted file is `.env.enc`. On commands that take a file, `-f` / `--file` and a positional path set the same thing. If both are given and they differ, Pogo exits 1.
+The default encrypted file is `.env.enc`. On commands that take a file, `-f` / `--file` and a positional path set the same thing. If both are given and they differ, Pogo exits 1. `decrypt` is the exception when it is writing a new plaintext file: `pogo decrypt .env.enc -f .env` writes `.env`, and `pogo decrypt -f .env.enc -o .env` writes `.env`.
 
 Use only one of `--key-env` and `--key-stdin`. If you pass neither, Pogo asks. `--key-file` and `--new-key-file` are rejected (exit 1). There is no `--passphrase` flag. Pogo will not read a passphrase from a file.
 
@@ -75,14 +75,29 @@ pogo encrypt .env -f .env.production.enc
 
 `pogo decrypt [file] [outfile]`
 
-Decrypt to the terminal, or to a file if you pass one. Pogo always prints a warning. Prefer `pogo run`. `-` also means the terminal. If `-f` is set and you pass one positional path, that path is the output file. `--env NAME` prints the merged keys for that section, not the raw file. Without `--env`, the original text is printed, comments included. `--force` replaces an existing output file. Pogo refuses to write the plaintext onto the encrypted file.
+Decrypt to the terminal, or to a new file. Pogo always prints a warning. Prefer `pogo run`. `-` also means the terminal. `-o` / `--output` is the plaintext file. `pogo decrypt .env.enc -f .env` also writes `.env`, because the positional path ends in `.enc` and `-f` does not. `pogo decrypt -f .env.enc ./check.env` still treats `-f` as the encrypted file and `./check.env` as the new file. `--env NAME` prints the merged keys for that section, not the raw file. Without `--env`, the original text is printed, comments included. `--force` replaces an existing output file. Pogo refuses to write the plaintext onto the encrypted file. The new file is mode 0600.
 
-Flags: `-f` / `--file`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--env`, `--force`.
+Flags: `-f` / `--file`, `-o` / `--output`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--env`, `--force`.
 
 ```bash
 pogo decrypt
-pogo decrypt .env.enc ./check.env
+pogo decrypt -f .env.enc -o .env
+pogo decrypt .env.enc -f ./check.env
 pogo decrypt --env production
+```
+
+## keys
+
+`pogo keys [file]`
+
+Decrypt and print variable names. Values are not printed. Stdout is one name per line. A `[section]` line is a section name. Without `--env`, top-level names come first, then each section. `--env NAME` prints the names `pogo run --env NAME` would set. A repeated name is printed once. Stderr says `Names only. Values were not printed.`
+
+Flags: `-f` / `--file`, `--key-env`, `--key-stdin`, `--allow-short-passphrase`, `--env`.
+
+```bash
+pogo keys
+pogo keys -f .env.production.enc
+pogo keys --env production
 ```
 
 ## convert
@@ -170,7 +185,7 @@ pogo help docker
 
 `pogo version`
 
-Print `pogo` and the running version (this tree: `pogo 1.0.6`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
+Print `pogo` and the running version (this tree: `pogo 1.0.7`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
 
 ```bash
 pogo version

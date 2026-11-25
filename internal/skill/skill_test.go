@@ -29,7 +29,7 @@ func TestAgentRules(t *testing.T) {
 		"pogo-passphrase-for-.env.enc.invalid",
 		"pogo-new-passphrase-for-.env.enc.invalid",
 		"pogo-confirm-passphrase-for-.env.enc.invalid",
-		"pogo doctor` covers init, edit, run, encrypt, decrypt, convert, and rekey",
+		"pogo doctor` covers init, edit, run, encrypt, decrypt, keys, convert, and rekey",
 		"run `pogo edit` with no key flags, tell the person a tab will open, and wait",
 		"pogo upgrade --check",
 		"pogo upgrade --yes",

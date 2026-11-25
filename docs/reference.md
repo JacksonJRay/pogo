@@ -50,7 +50,7 @@ pogo upgrade --version v1.0.3
 
 `pogo upgrade` reads `https://api.github.com/repos/JacksonJRay/pogo/releases/latest` (no token unless `GITHUB_TOKEN` is set, and that token is sent only to `api.github.com`). It downloads `pogo-<os>-<arch>` and `SHA256SUMS` over HTTPS, using the same proxy settings as other programs (`HTTPS_PROXY`). It checks the SHA256 before it touches the installed binary. The new file's `version` command must print the expected version, and then Pogo renames it into place.
 
-If this binary is already the latest release, stdout is `pogo <version> is the latest version` (this tree: `pogo 1.0.6 is the latest version`) and the exit code is 0. If this binary is newer than the latest release, stdout is `pogo <version> is newer than the latest release <version>` and the exit code is 0. Nothing is installed in either case. Pogo does not install an older release unless `--version` names it. If `--version` names the version that is already running, stdout is `pogo <version> is already the requested version` and the exit code is 0.
+If this binary is already the latest release, stdout is `pogo <version> is the latest version` (this tree: `pogo 1.0.7 is the latest version`) and the exit code is 0. If this binary is newer than the latest release, stdout is `pogo <version> is newer than the latest release <version>` and the exit code is 0. Nothing is installed in either case. Pogo does not install an older release unless `--version` names it. If `--version` names the version that is already running, stdout is `pogo <version> is already the requested version` and the exit code is 0.
 
 `--check` compares and does not install. Exit 0 when this binary is current or newer than the latest release. Exit 10 when a different release would be installed. On that exit 10, the latest-release check prints `current <version>` and `latest <version>`. With `--version`, it prints `current <version>` and `requested <version>`. `pogo upgrade --check` still exits 0 or 10 on a Nix or Guix store path and does not change that path.
 
@@ -66,7 +66,7 @@ Syntax and flags for each command: [commands.md](commands.md).
 
 ## Multiple environments
 
-Optional. Keys above the first `[section]` are the shared top. A `[name]` section is loaded only with `--env name`, and it replaces top-level keys with the same name. There is no syntax to return to the top level. `decrypt` without `--env` prints the original text, comments included. `decrypt --env NAME` prints the merged keys.
+Optional. Keys above the first `[section]` are the shared top. A `[name]` section is loaded only with `--env name`, and it replaces top-level keys with the same name. There is no syntax to return to the top level. `decrypt` without `--env` prints the original text, comments included. `decrypt --env NAME` prints the merged keys. `keys` prints names only. `keys --env NAME` prints the merged names and not the values.
 
 ```text
 PORT=43111

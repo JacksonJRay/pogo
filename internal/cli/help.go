@@ -27,7 +27,7 @@ The encrypted file is named .env.enc unless you pass -f with another name.
 The encrypted file can sit on disk. The passphrase stays with you.
 One static binary, no telemetry, no language SDK. upgrade is the only command that uses the network.`,
 		synopsis: "pogo <command> [flags] [arguments]",
-		args: `The first argument is a command: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, upgrade, docker, or doctor.
+		args: `The first argument is a command: init, edit, run, encrypt, decrypt, keys, convert, rekey, skill, help, version, upgrade, docker, or doctor.
 docker only prints the container guide. doctor reports the passphrase prompt and which editor edit would open.
 upgrade replaces this binary with a GitHub release. It does not read a passphrase.
 Anything after -- is the program to run, and only for the run command.`,
@@ -72,6 +72,7 @@ func helpFor(cmd string) (string, error) {
 		"run":     runHelp(),
 		"encrypt": encryptHelp(),
 		"decrypt": decryptHelp(),
+		"keys":    keysHelp(),
 		"convert": convertHelp(),
 		"rekey":   rekeyHelp(),
 		"skill":   skillHelp(),
@@ -272,29 +273,68 @@ func decryptHelp() commandDoc {
 Printing secrets is easy to leak. Prefer "pogo run" so the values stay in memory.
 Pogo always prints a warning. Without an output path, the plaintext goes to stdout and the warning goes to stderr.`,
 		synopsis: "pogo decrypt [file] [outfile]",
-		args: `file       Optional encrypted file. Default: .env.enc. Same as -f.
+		args: `file       Optional encrypted file. Default: .env.enc. Same as -f when you are not naming a new plaintext file.
 outfile    Optional plaintext destination. Default: print to the terminal.
            "-" also means the terminal.
-           If -f is set and you pass one positional path, that path is the output file.`,
+           -o PATH sets the same destination.
+           pogo decrypt .env.enc -f .env writes .env, because the positional path ends in .enc and -f does not.
+           pogo decrypt -f .env.enc ./check.env still treats -f as the encrypted file and ./check.env as the new file.`,
 		flags: commonFlags() + `
 --env NAME
     Print the merged view for that [section], not the raw file.
     Default: print the original file, including comments and blank lines.
 
-` + forceFlag(),
+` + outputFlag() + forceFlag(),
 		examples: `pogo decrypt
-pogo decrypt -f .env.production.enc
-pogo decrypt .env.enc ./check.env
+pogo decrypt -f .env.production.enc -o .env
+pogo decrypt .env.enc -f ./check.env
 pogo decrypt --env production`,
 		workflows: `Inspect plaintext on the terminal only when necessary. Terminal output and logs can disclose secrets:
   pogo decrypt
 
-Check a required variable without printing its value:
-  pogo run -- sh -c 'test -n "$API_KEY" && printf "API_KEY is set\n"'
+Check which names exist without printing values:
+  pogo keys
 
-Write a file only when you must. Pogo refuses to overwrite an existing output unless you pass --force.`,
+Write a new plaintext file. -f can be the encrypted file, with -o as the new file:
+  pogo decrypt -f .env.enc -o .env
+
+Or pass the encrypted file first and -f as the new file, when the encrypted path ends in .enc:
+  pogo decrypt .env.enc -f .env
+
+Pogo refuses to overwrite an existing output unless you pass --force. Delete the plaintext file when you are done.`,
 		frameworks: "decrypt is for inspection. Applications should use `pogo run` instead of reading a decrypted file.",
 		security:   securityNotes() + "\nA decrypted file on disk is plaintext. Delete it when you are done. Pogo does not delete it for you.\n",
+		exits:      exitNotes(),
+	}
+}
+
+func keysHelp() commandDoc {
+	return commandDoc{
+		name: "keys",
+		purpose: `Decrypt an env file and print the variable names, not the values.
+Use this when an agent needs to know which variables exist. The values stay in the encrypted file.
+Stdout is one name per line. A line in brackets, such as [production], is a section name, not a variable.
+Without --env, the top-level names come first, then each section. With --env NAME, the names are the ones "pogo run --env NAME" would set, merged over the top level. A repeated name is printed once.
+Pogo still asks for the passphrase, because the file is encrypted. The names go to stdout. Stderr says "Names only. Values were not printed."`,
+		synopsis: "pogo keys [file]",
+		args: `file    Optional encrypted file. Default: .env.enc
+        Same as -f. If both are given and they differ, Pogo stops.`,
+		flags: commonFlags() + `
+--env NAME
+    Print the merged names for that [section].
+    Default: top-level names, then each section.
+`,
+		examples: `pogo keys
+pogo keys -f .env.production.enc
+pogo keys --env production`,
+		workflows: `See the names before choosing one for a command. Do not decrypt the file to discover them:
+  pogo keys
+  pogo run -- sh -c 'test -n "$API_KEY" && printf "API_KEY is set\n"'
+
+A section's names, without values:
+  pogo keys --env production`,
+		frameworks: "The names are the environment variables the program would see. Vite still only exposes VITE_ names to browser code. Next.js still only exposes NEXT_PUBLIC_ names. The printed list does not include values.",
+		security:   securityNotes() + "\nkeys does not print values. Do not follow it with decrypt when you only needed the names.\n",
 		exits:      exitNotes(),
 	}
 }
@@ -409,7 +449,7 @@ func helpHelp() commandDoc {
 "pogo help", "pogo --help", and "pogo -h" are the same page.
 "pogo help run", "pogo run --help", and "pogo run -h" are the same page.`,
 		synopsis: "pogo help [command]",
-		args: `command    Optional command name: init, edit, run, encrypt, decrypt, convert, rekey, skill, help, version, upgrade, docker, or doctor.
+		args: `command    Optional command name: init, edit, run, encrypt, decrypt, keys, convert, rekey, skill, help, version, upgrade, docker, or doctor.
           With no command, Pogo prints the main help page.
           docker is a guide, not a container runtime. doctor does not ask for a passphrase. upgrade does not ask for one either.`,
 		flags: `
@@ -436,7 +476,7 @@ func upgradeHelp() commandDoc {
 		name: "upgrade",
 		purpose: `Replace this pogo binary with a release from https://github.com/JacksonJRay/pogo/releases.
 Pogo reads the latest GitHub release, or the release named by --version. It downloads pogo-<os>-<arch> and SHA256SUMS over HTTPS, checks the SHA256, and replaces the running binary only after the new file's version command prints the expected version.
-If this binary is already the latest, Pogo prints "pogo 1.0.6 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
+If this binary is already the latest, Pogo prints "pogo 1.0.7 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
 A terminal shows the versions and asks "Install? [y/N]". With no terminal, pass --yes, or Pogo exits 1 and tells you to add it. --check does not install.
 upgrade does not ask for a passphrase and does not read an env file.
 POGO_UPGRADE_API replaces the GitHub API base. It is for tests. Leave it unset. Plain HTTP is refused except for a localhost test server.
@@ -490,7 +530,7 @@ There is no telemetry. upgrade is the only command that uses the network.
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.6".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.7".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -514,7 +554,7 @@ func doctorHelp() commandDoc {
 	return commandDoc{
 		name: "doctor",
 		purpose: `Report which passphrase prompt Pogo would use, without asking for one, and which editor pogo edit and pogo init would run.
-The passphrase check covers init, edit, run, encrypt, decrypt, convert, and rekey. A new passphrase is asked twice through that same backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice.
+The passphrase check covers init, edit, run, encrypt, decrypt, keys, convert, and rekey. A new passphrase is asked twice through that same backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice.
 Exit 0 when a terminal, POGO_ASKPASS, the editor prompt, or a desktop askpass is available.
 Exit 1 when nothing can ask. The text names what was checked and tells an agent not to collect the passphrase in chat.
 The editor section is separate. It prints "editor:" and the command Pogo would run, or the same no-editor message as pogo edit. It does not change the exit code, because pogo run does not open an editor.
@@ -781,6 +821,7 @@ func commonFlags() string {
     Encrypted file. Default: .env.enc in the current directory.
     A positional path sets the same thing. If both are given and they differ, Pogo stops and tells you.
     On encrypt and convert, this flag is the file Pogo writes.
+    On decrypt, -o PATH is the plaintext file to create. pogo decrypt .env.enc -f .env writes .env when the positional path ends in .enc and -f does not.
 
 --key-env NAME
     Read the passphrase from the environment variable NAME. The value is used exactly, with no trimming.
@@ -816,7 +857,7 @@ func commonFlags() string {
     One character that is not only whitespace is enough. The check runs before the slow key step.
     Pogo prints one warning line on standard error: short passphrases are much easier to guess.
     That warning is not written to standard output.
-    Opening an existing file (run, decrypt, edit, and the current passphrase for rekey) does not use this minimum.
+    Opening an existing file (run, decrypt, keys, edit, and the current passphrase for rekey) does not use this minimum.
     Any passphrase that is not empty is tried. An empty passphrase is rejected with exit code 4.
     Passing this flag while opening is accepted and has no effect, and it does not print the warning.
     It works with the prompt, --key-stdin, and --key-env.
@@ -826,6 +867,16 @@ func commonFlags() string {
 -h, --help
     Show help for this command and exit 0.
     "pogo help <command>", "pogo <command> --help", and "pogo <command> -h" print the same text.
+`
+}
+
+func outputFlag() string {
+	return `
+-o, --output PATH
+    Write the decrypted plaintext to this new file instead of the terminal.
+    "-" prints to the terminal. Default: print to the terminal.
+    The file is mode 0600. Pogo does not overwrite it unless you pass --force.
+    Pogo will not use the encrypted file as this path.
 `
 }
 

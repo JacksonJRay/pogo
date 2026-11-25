@@ -45,7 +45,8 @@ Never place the passphrase in shell history, logs, version control, or a file.
 `--key-file` was removed. Do not write the passphrase to a file, and do not ask Pogo to read one.
 
 ## Rules for agents
-- Run `pogo doctor` before starting a program. It does not ask for a passphrase. `pogo doctor` covers init, edit, run, encrypt, decrypt, convert, and rekey.
+- Run `pogo doctor` before starting a program. It does not ask for a passphrase. `pogo doctor` covers init, edit, run, encrypt, decrypt, keys, convert, and rekey.
+- To see which variables are in the encrypted file, run `pogo keys`. Stdout is names only. A `[section]` line is a section name, not a variable. `pogo keys --env NAME` prints the names `pogo run --env NAME` would set. Values are not printed. Do not run `pogo decrypt` just to learn the names.
 - If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. On macOS that window is titled `Pogo Password Request`. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
 - To change the env file, run `pogo edit` with no key flags, tell the person a tab will open, and wait until pogo exits. Do not ask the person to paste values into chat.
 - To see if a newer pogo exists, run `pogo upgrade --check`. To install it from an agent session, run `pogo upgrade --yes`. Do not downgrade unless the person names a version.
@@ -76,7 +77,7 @@ Do not pass `--allow-short-passphrase` unless the user explicitly asks for a sho
 
 The 15-character minimum applies only when creating a passphrase: `init`, `encrypt`, `convert`, and the new passphrase for `rekey`. `--allow-short-passphrase` skips that minimum. One character that is not only whitespace is enough. It works with the prompt, `--key-stdin`, or `--key-env`, and it prints one warning on stderr.
 
-Opening an existing file (`run`, `decrypt`, `edit`, and the current passphrase for `rekey`) accepts any non-empty passphrase. An empty passphrase is rejected. Do not pass `--allow-short-passphrase` on those commands; it is accepted and ignored, and it does not print a warning. `edit` re-saves with the same passphrase.
+Opening an existing file (`run`, `decrypt`, `keys`, `edit`, and the current passphrase for `rekey`) accepts any non-empty passphrase. An empty passphrase is rejected. Do not pass `--allow-short-passphrase` on those commands; it is accepted and ignored, and it does not print a warning. `edit` re-saves with the same passphrase.
 
 Example, only when the user asked for it:
 

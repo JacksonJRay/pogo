@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-25 — 1.0.7
+
+- Added `pogo keys`. It decrypts an env file and prints variable names, not values, so an agent can see what is available. Stdout is one name per line. A `[section]` line is a section name. Without `--env`, top-level names come first, then each section. `--env NAME` prints the names `pogo run --env NAME` would set. A repeated name is printed once. Stderr says `Names only. Values were not printed.` The passphrase is still required.
+- `pogo decrypt` can write a new plaintext file. `pogo decrypt -f .env.enc -o .env` and `pogo decrypt -o .env` write `.env`. `pogo decrypt .env.enc -f .env` writes `.env` because the positional path ends in `.enc` and `-f` does not. `pogo decrypt -f .env.enc ./check.env` still treats `-f` as the encrypted file. `--force` is still required to replace an existing output. The new file is mode 0600. Pogo still refuses to write the plaintext onto the encrypted file, and it still prints a warning.
+
 ## 2026-11-03 — 1.0.6
 
 - On macOS, when stdin is not a terminal, Pogo asks with a native dialog titled `Pogo Password Request` if the person is logged into the GUI. `osascript` is already on the machine. No `DISPLAY` or Wayland socket is required, and no Linux askpass is installed. The dialog text names the file. Cancel stops. A timeout stops and does not open another dialog. An SSH session does not show the dialog on the Mac's screen. If the dialog cannot be shown, Pogo tries the next prompt and says so.

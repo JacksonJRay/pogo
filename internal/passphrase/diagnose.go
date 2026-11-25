@@ -9,8 +9,8 @@ import (
 )
 
 // promptCoverage is appended to doctor output so the same check is obviously
-// the one init, edit, run, encrypt, decrypt, convert, and rekey use.
-const promptCoverage = " This covers init, edit, run, encrypt, decrypt, convert, and rekey. A new passphrase is asked twice through this backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice."
+// the one init, edit, run, encrypt, decrypt, keys, convert, and rekey use.
+const promptCoverage = " This covers init, edit, run, encrypt, decrypt, keys, convert, and rekey. A new passphrase is asked twice through this backend. rekey asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice."
 
 // Diagnosis is what `pogo doctor` prints. It does not ask for a passphrase.
 type Diagnosis struct {

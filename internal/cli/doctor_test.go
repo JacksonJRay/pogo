@@ -36,7 +36,7 @@ func TestDoctorNoBackend(t *testing.T) {
 		"Last resort",
 		"--key-env",
 		"If you are an AI agent:",
-		"This covers init, edit, run, encrypt, decrypt, convert, and rekey",
+		"This covers init, edit, run, encrypt, decrypt, keys, convert, and rekey",
 		"pogo: no editor can open the file here",
 	} {
 		if !strings.Contains(stdout, part) {
@@ -104,7 +104,7 @@ func TestDoctorAskpassExitZero(t *testing.T) {
 	if code != 0 || !strings.Contains(stdout, "backend: POGO_ASKPASS") || strings.Contains(stdout, "secret-value") {
 		t.Fatalf("code %d\n%s\n%s", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "This covers init, edit, run, encrypt, decrypt, convert, and rekey") {
+	if !strings.Contains(stdout, "This covers init, edit, run, encrypt, decrypt, keys, convert, and rekey") {
 		t.Fatalf("doctor missing command coverage\n%s", stdout)
 	}
 	t.Setenv("POGO_EDITOR", "code --wait")

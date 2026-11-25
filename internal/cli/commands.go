@@ -43,6 +43,8 @@ func dispatch(cmd string, opts options, version string) (int, error) {
 		return cmdEncrypt(opts)
 	case "decrypt":
 		return cmdDecrypt(opts)
+	case "keys":
+		return cmdKeys(opts)
 	case "convert":
 		return cmdConvert(opts)
 	case "rekey":
@@ -260,7 +262,7 @@ func encryptLike(opts options, convert bool) (int, error) {
 }
 
 func cmdDecrypt(opts options) (int, error) {
-	enc, outfile, toStdout, err := decryptPaths(opts.file, opts.fileSet, opts.positionals)
+	enc, outfile, toStdout, err := decryptPaths(opts.file, opts.fileSet, opts.positionals, opts.output, opts.outputSet)
 	if err != nil {
 		return 1, err
 	}
@@ -317,6 +319,75 @@ func cmdDecrypt(opts options) (int, error) {
 		return 1, err
 	}
 	return 0, nil
+}
+
+func cmdKeys(opts options) (int, error) {
+	if opts.hasDD {
+		return 1, fmt.Errorf("pogo keys prints variable names and does not run a program.\nExample: pogo keys -f .env.enc")
+	}
+	enc, err := oneEnc(opts.file, opts.fileSet, opts.positionals)
+	if err != nil {
+		return 1, err
+	}
+	ok, err := fileExists(enc)
+	if err != nil {
+		return 1, err
+	}
+	if !ok {
+		return 1, missingEnc(enc)
+	}
+	pass, code, err := acquire(opts, true, false, openPrompt(), "", enc)
+	if err != nil {
+		return code, err
+	}
+	defer securemem.Wipe(pass)
+	plain, err := decryptFile(enc, pass)
+	if err != nil {
+		return explainDecrypt(err)
+	}
+	defer securemem.Wipe(plain)
+	doc, err := dotenv.Parse(plain)
+	if err != nil {
+		return 1, fmt.Errorf("Could not parse the decrypted environment file: %s.\nEdit it with `pogo edit` and fix that line.", err.Error())
+	}
+	var lines []string
+	if opts.envSet {
+		pairs, err := doc.Select(opts.envName)
+		if err != nil {
+			return 1, sectionError(doc, opts.envName)
+		}
+		lines = keyNames(pairs)
+	} else {
+		lines = allKeyNames(doc)
+	}
+	fmt.Fprintf(os.Stderr, "Names only. Values were not printed.\n")
+	for _, line := range lines {
+		fmt.Fprintln(os.Stdout, line)
+	}
+	return 0, nil
+}
+
+func keyNames(pairs []dotenv.Pair) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range pairs {
+		if _, ok := seen[p.Key]; ok {
+			continue
+		}
+		seen[p.Key] = struct{}{}
+		out = append(out, p.Key)
+	}
+	return out
+}
+
+func allKeyNames(doc *dotenv.Document) []string {
+	var out []string
+	out = append(out, keyNames(doc.Top)...)
+	for _, name := range doc.Names() {
+		out = append(out, "["+name+"]")
+		out = append(out, keyNames(doc.Sections[name])...)
+	}
+	return out
 }
 
 func cmdRekey(opts options) (int, error) {
@@ -422,8 +493,8 @@ func cmdSkill(opts options) (int, error) {
 }
 
 // acquire reads a passphrase and checks it before any slow key derivation.
-// opening is the decrypt path: run, decrypt, edit, and the current passphrase
-// for rekey. That path rejects only an empty passphrase. Creating a passphrase
+// opening is the decrypt path: run, decrypt, keys, edit, and the current
+// passphrase for rekey. That path rejects only an empty passphrase. Creating a passphrase
 // (init, encrypt, convert, and rekey's new passphrase) keeps the 15-character
 // minimum unless --allow-short-passphrase is set.
 func acquire(opts options, opening bool, confirm bool, prompt, confirmPrompt, encPath string) ([]byte, int, error) {

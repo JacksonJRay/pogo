@@ -111,7 +111,7 @@ func TestHelpFormsMatch(t *testing.T) {
 			t.Errorf("%s help should explain passphrase in plain language", cmd)
 		}
 		switch cmd {
-		case "init", "edit", "run", "encrypt", "decrypt", "convert", "rekey":
+		case "init", "edit", "run", "encrypt", "decrypt", "keys", "convert", "rekey":
 			if !strings.Contains(longOut, "--allow-short-passphrase") || !strings.Contains(longOut, "whitespace-only") {
 				t.Errorf("%s help missing short-passphrase flag", cmd)
 			}
@@ -310,7 +310,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.6") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.7") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")
