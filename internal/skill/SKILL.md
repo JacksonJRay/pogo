@@ -20,7 +20,9 @@ Pogo is a single static binary that encrypts environment files with Argon2id + A
 ```bash
 pogo convert .env
 # or with custom output name
-pogo convert .env -f .env.production.enc
+pogo convert .env -o .env.production.enc
+# same output flag with -f as the plaintext file
+pogo convert -f .env -o .env.production.enc
 ```
 
 Pogo reads the plaintext file, prompts for a new passphrase (minimum 15 characters, entered twice), writes the encrypted file, and checks that the file decrypts. It then asks `Delete the original .env? [y/N]` on the controlling terminal. The default is No. Only `y` or `yes` deletes the plaintext. Enter, any other answer, EOF, and a session with no terminal keep the file. The question is not read from stdin, so `printf '%s' "$PASS" | pogo convert .env --key-stdin` can still ask on the terminal.

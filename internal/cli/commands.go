@@ -215,11 +215,17 @@ func cmdConvert(opts options) (int, error) {
 
 func encryptLike(opts options, convert bool) (int, error) {
 	warnShort(opts)
-	usage := "pogo encrypt needs the plaintext file to read.\nExample: pogo encrypt .env\nExample with a custom output name: pogo encrypt .env -f secrets.enc"
+	usage := "pogo encrypt needs the plaintext file to read.\nExample: pogo encrypt .env\nExample with a custom output name: pogo encrypt .env -o secrets.enc"
 	if convert {
-		usage = "pogo convert needs the plaintext env file.\nExample: pogo convert .env\nExample with a custom output name: pogo convert .env -f .env.production.enc"
+		usage = "pogo convert needs the plaintext env file.\nExample: pogo convert .env\nExample with a custom output name: pogo convert .env -o .env.production.enc"
 	}
-	plainPath, enc, err := plainAndEnc(opts.file, opts.fileSet, opts.positionals, usage)
+	var plainPath, enc string
+	var err error
+	if opts.outputSet {
+		plainPath, enc, err = encryptOutputPaths(opts.file, opts.fileSet, opts.positionals, opts.output)
+	} else {
+		plainPath, enc, err = plainAndEnc(opts.file, opts.fileSet, opts.positionals, usage)
+	}
 	if err != nil {
 		return 1, err
 	}

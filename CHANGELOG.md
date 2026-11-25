@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25 — 1.0.8
+
+- `pogo convert` and `pogo encrypt` accept `-o` / `--output` as the encrypted file to write. `pogo convert .env -o .env.enc` writes `.env.enc`. `pogo convert -f .env -o .env.enc` reads `.env` and writes `.env.enc`. `-f` without `-o` is still the encrypted output.
+
 ## 2026-11-25 — 1.0.7
 
 - Added `pogo keys`. It decrypts an env file and prints variable names, not values, so an agent can see what is available. Stdout is one name per line. A `[section]` line is a section name. Without `--env`, top-level names come first, then each section. `--env NAME` prints the names `pogo run --env NAME` would set. A repeated name is printed once. Stderr says `Names only. Values were not printed.` The passphrase is still required.

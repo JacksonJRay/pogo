@@ -369,13 +369,16 @@ The original file is not modified when it is kept. Deleting it is a normal remov
 You type the new passphrase twice, unless you pass --key-env or --key-stdin. Pogo will not read a passphrase from a file.`,
 		synopsis: "pogo convert <plaintext.env> [file]",
 		args: `plaintext.env    Required. The existing env file to read.
+                 With -o and no positional path, -f is this plaintext file.
 file             Optional encrypted output. Default: .env.enc
-                 Same as -f. If you pass both and they differ, Pogo stops.`,
+                 Same as -f when -o is not set, and the same as -o.
+                 pogo convert .env -o .env.enc writes .env.enc.
+                 pogo convert -f .env -o .env.enc reads .env and writes .env.enc.`,
 		flags: commonFlags() + forceFlag() + convertDeleteFlags(),
 		examples: `pogo convert .env
-pogo convert .env -f .env.production.enc
+pogo convert .env -o .env.production.enc
+pogo convert -f .env -o .env.production.enc
 printf '%s' "$POGO_PASS" | pogo convert .env --key-stdin
-pogo convert .env --delete-original
 pogo convert .env --keep-original`,
 		workflows: `Convert and answer the question. Press Enter to keep the plaintext:
   pogo convert .env
@@ -387,7 +390,8 @@ A script that must not ask. --keep-original leaves the file. --delete-original r
   printf '%s' "$POGO_PASS" | pogo convert .env --key-stdin --delete-original
 
 Custom output name:
-  pogo convert .env -f .env.production.enc
+  pogo convert .env -o .env.production.enc
+  pogo convert -f .env -o .env.production.enc
   pogo run -f .env.production.enc -- ./server`,
 		frameworks: "Works for any project's .env. The encrypted file is what `pogo run` reads. The app does not need a Pogo library.",
 		security:   securityNotes() + "\nAfter the encrypted file is written and checked, Pogo can remove the plaintext with a normal delete. That is not a secure wipe. Copies can remain on disk. The default is to keep the file. A session with no terminal keeps the file. --delete-original is the only way to delete without a yes answer.\n",
@@ -494,7 +498,7 @@ func upgradeHelp() commandDoc {
 		name: "upgrade",
 		purpose: `Replace this pogo binary with a release from https://github.com/JacksonJRay/pogo/releases.
 Pogo reads the latest GitHub release, or the release named by --version. It downloads pogo-<os>-<arch> and SHA256SUMS over HTTPS, checks the SHA256, and replaces the running binary only after the new file's version command prints the expected version.
-If this binary is already the latest, Pogo prints "pogo 1.0.7 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
+If this binary is already the latest, Pogo prints "pogo 1.0.8 is the latest version" and exits 0. It does not downgrade unless --version names an older release.
 A terminal shows the versions and asks "Install? [y/N]". With no terminal, pass --yes, or Pogo exits 1 and tells you to add it. --check does not install.
 upgrade does not ask for a passphrase and does not read an env file.
 POGO_UPGRADE_API replaces the GitHub API base. It is for tests. Leave it unset. Plain HTTP is refused except for a localhost test server.
@@ -548,7 +552,7 @@ There is no telemetry. upgrade is the only command that uses the network.
 func versionHelp() commandDoc {
 	return commandDoc{
 		name:     "version",
-		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.7".`,
+		purpose:  `Print the Pogo version. The version line looks like "pogo 1.0.8".`,
 		synopsis: "pogo version",
 		args:     "No arguments.",
 		flags: `
@@ -838,7 +842,8 @@ func commonFlags() string {
 -f, --file PATH
     Encrypted file. Default: .env.enc in the current directory.
     A positional path sets the same thing. If both are given and they differ, Pogo stops and tells you.
-    On encrypt and convert, this flag is the file Pogo writes.
+    On encrypt and convert, this flag is the encrypted file Pogo writes. -o names that same file.
+    pogo convert .env -o .env.enc writes .env.enc. pogo convert -f .env -o .env.enc reads .env and writes .env.enc.
     On decrypt, -o PATH is the plaintext file to create. pogo decrypt .env.enc -f .env writes .env when the positional path ends in .enc and -f does not.
 
 --key-env NAME
@@ -891,10 +896,13 @@ func commonFlags() string {
 func outputFlag() string {
 	return `
 -o, --output PATH
-    Write the decrypted plaintext to this new file instead of the terminal.
+    On decrypt, write the decrypted plaintext to this new file instead of the terminal.
     "-" prints to the terminal. Default: print to the terminal.
     The file is mode 0600. Pogo does not overwrite it unless you pass --force.
     Pogo will not use the encrypted file as this path.
+    On encrypt and convert, this is the encrypted file to write.
+    pogo convert .env -o .env.enc writes .env.enc.
+    pogo convert -f .env -o .env.enc reads .env and writes .env.enc.
 `
 }
 

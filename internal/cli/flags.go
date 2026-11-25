@@ -34,10 +34,10 @@ var commandFlags = map[string][]string{
 	"init":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
 	"edit":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase"},
 	"run":     {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--no-override"},
-	"encrypt": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
+	"encrypt": {"-f", "--file", "-o", "--output", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force"},
 	"decrypt": {"-f", "--file", "-o", "--output", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env", "--force"},
 	"keys":    {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--env"},
-	"convert": {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force", "--delete-original", "--keep-original"},
+	"convert": {"-f", "--file", "-o", "--output", "--key-env", "--key-stdin", "--allow-short-passphrase", "--force", "--delete-original", "--keep-original"},
 	"rekey":   {"-f", "--file", "--key-env", "--key-stdin", "--allow-short-passphrase", "--new-key-env"},
 	"skill":   {"--list", "--framework"},
 	"help":    {},
@@ -519,7 +519,32 @@ func plainAndEnc(flag string, flagSet bool, pos []string, usage string) (string,
 		enc = defaultEnc
 	}
 	if plain == enc {
-		return "", "", fmt.Errorf("The plaintext path and the encrypted path are the same (%s).\nPass a different -f name. Example: pogo convert .env -f .env.enc", plain)
+		return "", "", fmt.Errorf("The plaintext path and the encrypted path are the same (%s).\nPass a different -f or -o name. Example: pogo convert .env -o .env.enc", plain)
+	}
+	return plain, enc, nil
+}
+
+// encryptOutputPaths resolves encrypt and convert paths when -o is set.
+// -o is the encrypted file to write. A positional path is the plaintext.
+// With no positional path, -f is the plaintext, as in:
+// pogo convert -f .env -o .env.enc
+func encryptOutputPaths(flag string, flagSet bool, pos []string, output string) (plain, enc string, err error) {
+	enc = output
+	switch {
+	case len(pos) > 1:
+		return "", "", fmt.Errorf("Unexpected extra argument %q.\n-o already names the encrypted file.\nExample: pogo convert .env -o .env.enc", pos[1])
+	case len(pos) == 1:
+		plain = pos[0]
+		if flagSet && flag != enc {
+			return "", "", fmt.Errorf("You gave two encrypted output paths: -f says %q and -o says %q.\nUse one of them.\nExample: pogo convert .env -o .env.enc", flag, enc)
+		}
+	case flagSet:
+		plain = flag
+	default:
+		return "", "", fmt.Errorf("pogo needs the plaintext env file.\nExample: pogo convert .env -o .env.enc\nExample: pogo convert -f .env -o .env.enc")
+	}
+	if plain == enc {
+		return "", "", fmt.Errorf("The plaintext path and the encrypted path are the same (%s).\nPass a different -o name. Example: pogo convert .env -o .env.enc", plain)
 	}
 	return plain, enc, nil
 }

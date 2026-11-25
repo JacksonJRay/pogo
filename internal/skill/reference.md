@@ -39,7 +39,7 @@ Other flags:
 | Flag | Commands | Meaning |
 |---|---|---|
 | `--env NAME` | `run`, `decrypt`, `keys` | Use the `[NAME]` section, merged over the top of the file. `keys` prints names only |
-| `-o`, `--output PATH` | `decrypt` | Write decrypted plaintext to this new file. `-` prints to the terminal. Refuses to overwrite unless `--force` |
+| `-o`, `--output PATH` | `encrypt`, `convert`, `decrypt` | On `encrypt` and `convert`, the encrypted file to write. `pogo convert .env -o .env.enc` writes `.env.enc`. `pogo convert -f .env -o .env.enc` reads `.env` and writes `.env.enc`. On `decrypt`, the plaintext file to write. `-` prints to the terminal. Refuses to overwrite unless `--force` |
 | `--no-override` | `run` | Keep variables that are already set. By default the encrypted file wins |
 | `--force` | `init`, `encrypt`, `convert`, `decrypt` | Replace an existing destination file |
 | `--delete-original` | `convert` | Delete the plaintext after the encrypted file is written and checked. No question. A normal remove, not a secure wipe. Kept if conversion or the decrypt check fails |

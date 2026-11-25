@@ -7,6 +7,49 @@ import (
 	"testing"
 )
 
+func TestConvertOutputPaths(t *testing.T) {
+	plain, enc, err := encryptOutputPaths("", false, []string{".env-global"}, ".env.global")
+	if err != nil || plain != ".env-global" || enc != ".env.global" {
+		t.Fatalf("positional -o got %q %q %v", plain, enc, err)
+	}
+	plain, enc, err = encryptOutputPaths(".env-global", true, nil, ".env.global")
+	if err != nil || plain != ".env-global" || enc != ".env.global" {
+		t.Fatalf("-f plain -o enc got %q %q %v", plain, enc, err)
+	}
+	_, _, err = encryptOutputPaths("other.enc", true, []string{".env"}, ".env.global")
+	if err == nil || !strings.Contains(err.Error(), "two encrypted output paths") {
+		t.Fatalf("two outputs %v", err)
+	}
+	if testing.Short() {
+		t.Skip("full Argon2id")
+	}
+	dir := t.TempDir()
+	plain = filepath.Join(dir, ".env-global")
+	enc = filepath.Join(dir, ".env.global")
+	if err := os.WriteFile(plain, []byte("API_KEY=super-secret-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("POGO_TEST_PASS", "pogo-test-passphrase")
+	code, stdout, stderr := runCLI(t, "convert", plain, "-o", enc, "--key-env", "POGO_TEST_PASS", "--keep-original")
+	if code != 0 {
+		t.Fatalf("convert -o %d %s", code, stderr)
+	}
+	if strings.Contains(stdout, "super-secret-value") || strings.Contains(stderr, "super-secret-value") {
+		t.Fatalf("value leaked %s %s", stdout, stderr)
+	}
+	if _, err := os.Stat(enc); err != nil {
+		t.Fatal(err)
+	}
+	enc2 := filepath.Join(dir, ".env.global.2")
+	code, _, stderr = runCLI(t, "convert", "-f", plain, "-o", enc2, "--key-env", "POGO_TEST_PASS", "--keep-original")
+	if code != 0 {
+		t.Fatalf("convert -f plain -o enc %d %s", code, stderr)
+	}
+	if _, err := os.Stat(enc2); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDecryptPathsOutput(t *testing.T) {
 	enc, out, toStdout, err := decryptPaths(".env.enc", true, nil, ".env", true)
 	if err != nil || enc != ".env.enc" || out != ".env" || toStdout {

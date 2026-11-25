@@ -315,7 +315,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.7") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.8") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")
