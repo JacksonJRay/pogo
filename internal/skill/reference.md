@@ -51,7 +51,7 @@ Other flags:
 | `--yes` | `upgrade` | Install without asking. Required when stdin is not a terminal |
 | `--version vX.Y.Z` | `upgrade` | Install that release, including an older one. `pogo --version` with no command still prints the running version |
 
-If both `-f` and a positional encrypted-file path are given and they differ, Pogo stops (exit 1). Use only one of them.
+If both `-f` and a positional encrypted-file path are given and they differ, Pogo stops (exit 1). Use only one of them. `decrypt` is the exception when it is writing a new plaintext file: `pogo decrypt .env.enc -f .env` writes `.env`, and `pogo decrypt -f .env.enc -o .env` writes `.env`. `pogo decrypt -f .env.enc ./check.env` still treats `-f` as the encrypted file.
 
 `pogo run` requires `--` before the program:
 

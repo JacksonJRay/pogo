@@ -155,6 +155,11 @@ func TestHelpFormsMatch(t *testing.T) {
 	if !strings.Contains(g1, "Quick start") {
 		t.Fatal("global help missing quick start")
 	}
+	for _, phrase := range []string{"pogo keys", "pogo decrypt .env.enc -f .env", "pogo decrypt -f .env.enc -o .env"} {
+		if !strings.Contains(g1, phrase) {
+			t.Errorf("global help missing %q", phrase)
+		}
+	}
 	if !strings.Contains(g1, "--allow-short-passphrase") || !strings.Contains(g1, "short passphrases are much easier to guess") {
 		t.Fatal("global help missing --allow-short-passphrase")
 	}

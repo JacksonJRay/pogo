@@ -19,9 +19,17 @@ func globalHelp() string {
 4. Start your app with those secrets loaded:
      pogo run -- npm start
 
+5. See which variables exist without printing values:
+     pogo keys
+
+6. Write a decrypted copy only when you must:
+     pogo decrypt .env.enc -f .env
+     pogo decrypt -f .env.enc -o .env
+
 When you create a file, Pogo asks for a passphrase of at least 15 characters and does not save it.
 Opening an existing file accepts the passphrase that encrypted it, as long as it is not empty.
 The encrypted file is named .env.enc unless you pass -f with another name.
+On decrypt, -o names the new plaintext file. pogo decrypt .env.enc -f .env writes .env when the encrypted path ends in .enc and -f does not.
 `,
 		purpose: `Pogo encrypts env files and loads them into a program at startup.
 The encrypted file can sit on disk. The passphrase stays with you.
@@ -38,11 +46,21 @@ Anything after -- is the program to run, and only for the run command.`,
 		examples: `pogo convert .env
 pogo edit
 pogo run -- npm start
+pogo keys
+pogo decrypt .env.enc -f .env
 pogo help run
 pogo skill`,
 		workflows: `Convert, then run:
   pogo convert .env
   printf '%s' "$POGO_PASS" | pogo run --key-stdin -- npm start
+
+See the names, then run. Values stay in the encrypted file:
+  pogo keys
+  pogo run -- ./server
+
+Write a plaintext file, then delete it:
+  pogo decrypt -f .env.enc -o .env
+  pogo decrypt .env.enc -f .env
 
 Create, edit, run:
   pogo init

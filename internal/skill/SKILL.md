@@ -32,6 +32,9 @@ Pogo reads the plaintext file, prompts for a new passphrase (minimum 15 characte
 Convert:  pogo convert .env
 Edit:     pogo edit
 Run:      pogo run -- <command>          # uses ./.env.enc by default
+Keys:     pogo keys                       # names only, no values
+Decrypt:  pogo decrypt .env.enc -f .env  # write a new plaintext file
+          pogo decrypt -f .env.enc -o .env
 Rekey:    pogo rekey
 ```
 
@@ -47,6 +50,7 @@ Never place the passphrase in shell history, logs, version control, or a file.
 ## Rules for agents
 - Run `pogo doctor` before starting a program. It does not ask for a passphrase. `pogo doctor` covers init, edit, run, encrypt, decrypt, keys, convert, and rekey.
 - To see which variables are in the encrypted file, run `pogo keys`. Stdout is names only. A `[section]` line is a section name, not a variable. `pogo keys --env NAME` prints the names `pogo run --env NAME` would set. Values are not printed. Do not run `pogo decrypt` just to learn the names.
+- To write a new plaintext file, run `pogo decrypt .env.enc -f .env` or `pogo decrypt -f .env.enc -o .env`. The first form works when the encrypted path ends in `.enc` and `-f` does not. `--force` is required to replace an existing file. Prefer `pogo run` so the values stay in memory. Delete the plaintext file when the user is done. Do not print the values.
 - If doctor exits 0, run `pogo run -- <command>` with no key flags and tell the person to watch for the prompt. On macOS that window is titled `Pogo Password Request`. An agent runs `pogo run -- <command>` with no key flags. It does not collect the passphrase.
 - To change the env file, run `pogo edit` with no key flags, tell the person a tab will open, and wait until pogo exits. Do not ask the person to paste values into chat.
 - To see if a newer pogo exists, run `pogo upgrade --check`. To install it from an agent session, run `pogo upgrade --yes`. Do not downgrade unless the person names a version.
