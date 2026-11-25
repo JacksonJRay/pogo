@@ -35,7 +35,7 @@ func TestOpenShortPassphraseTTY(t *testing.T) {
 	if code != 0 || stdout != body {
 		t.Fatalf("tty decrypt %d %q %s", code, stdout, stderr)
 	}
-	if !strings.Contains(stderr, "Enter passphrase: ") || strings.Contains(stderr, "min 15") || strings.Contains(stderr, "easier to guess") {
+	if !strings.Contains(stderr, "Enter passphrase for key 'abcd.enc': ") || strings.Contains(stderr, "min 15") || strings.Contains(stderr, "easier to guess") {
 		t.Fatalf("open prompt %s", stderr)
 	}
 
@@ -83,7 +83,7 @@ func runCLIOnTTY(t *testing.T, password string, args ...string) (int, string, st
 		done <- Main(args, "1.0.0-test")
 	}()
 
-	prompt := waitCLIPrompt(t, errR, "Enter passphrase: ")
+	prompt := waitCLIPrompt(t, errR, "Enter passphrase for key '")
 	if _, err := master.Write([]byte(password + "\n")); err != nil {
 		t.Fatal(err)
 	}

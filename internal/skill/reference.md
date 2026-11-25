@@ -86,7 +86,7 @@ New passphrase for .env.enc:
 Confirm new passphrase for .env.enc:
 ```
 
-Opening an existing file prompts once. On a terminal that line is `Enter passphrase: `. `rekey` asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice. A mismatch exits 4 and writes nothing. `--key-stdin` and `--key-env` are still read once.
+Opening an existing file prompts once. On a terminal that line is `Enter passphrase for key '.env.enc': `. Ovis masks it. Inside Herdr, when stdin is not a terminal, Pogo opens a pane and asks there. `rekey` asks for the current passphrase, checks that it decrypts, and only then asks for the new one twice. A mismatch exits 4 and writes nothing. `--key-stdin` and `--key-env` are still read once.
 
 Never put the passphrase in shell history, logs, source control, a file, or command-line arguments. There is no `--passphrase` flag on purpose. Do not write it to a Compose secret or `/run/secrets` for Pogo to read.
 

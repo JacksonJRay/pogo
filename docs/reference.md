@@ -50,7 +50,7 @@ pogo upgrade --version v1.0.3
 
 `pogo upgrade` reads `https://api.github.com/repos/JacksonJRay/pogo/releases/latest` (no token unless `GITHUB_TOKEN` is set, and that token is sent only to `api.github.com`). It downloads `pogo-<os>-<arch>` and `SHA256SUMS` over HTTPS, using the same proxy settings as other programs (`HTTPS_PROXY`). It checks the SHA256 before it touches the installed binary. The new file's `version` command must print the expected version, and then Pogo renames it into place.
 
-If this binary is already the latest release, stdout is `pogo <version> is the latest version` (this tree: `pogo 1.0.8 is the latest version`) and the exit code is 0. If this binary is newer than the latest release, stdout is `pogo <version> is newer than the latest release <version>` and the exit code is 0. Nothing is installed in either case. Pogo does not install an older release unless `--version` names it. If `--version` names the version that is already running, stdout is `pogo <version> is already the requested version` and the exit code is 0.
+If this binary is already the latest release, stdout is `pogo <version> is the latest version` (this tree: `pogo 1.0.9 is the latest version`) and the exit code is 0. If this binary is newer than the latest release, stdout is `pogo <version> is newer than the latest release <version>` and the exit code is 0. Nothing is installed in either case. Pogo does not install an older release unless `--version` names it. If `--version` names the version that is already running, stdout is `pogo <version> is already the requested version` and the exit code is 0.
 
 `--check` compares and does not install. Exit 0 when this binary is current or newer than the latest release. Exit 10 when a different release would be installed. On that exit 10, the latest-release check prints `current <version>` and `latest <version>`. With `--version`, it prints `current <version>` and `requested <version>`. `pogo upgrade --check` still exits 0 or 10 on a Nix or Guix store path and does not change that path.
 
@@ -127,7 +127,7 @@ The temp file is mode 0600 in a directory of mode 0700. Pogo prefers `$XDG_RUNTI
 | `EDITOR`, `VISUAL` | Editor when `POGO_EDITOR` is unset. On a terminal, the default is `vim` |
 | `POGO_EDIT_TIMEOUT` | Seconds to wait for the editor. `0` waits until it exits. See Editing |
 | `POGO_ASKPASS` | Askpass program. Same contract as `SSH_ASKPASS`. See [agents.md](agents.md) |
-| `POGO_PROMPT_TIMEOUT` | Seconds for the editor prompt, `POGO_ASKPASS`, the macOS dialog, and desktop dialogs. Unset: two minutes |
+| `POGO_PROMPT_TIMEOUT` | Seconds for the editor prompt, `POGO_ASKPASS`, the Herdr pane, the macOS dialog, and desktop dialogs. Unset: two minutes |
 | `POGO_FORCE_TERMINAL` | `1` keeps the terminal prompt when an agent owns the terminal. Unset, macOS shows `Pogo Password Request` |
 | `POGO_TTY_TIMEOUT` | Seconds for a terminal prompt when nobody is there to type. Unset for normal use |
 | `POGO_DEBUG` | `1` prints prompt and editor decisions on stderr. Never prints the passphrase |

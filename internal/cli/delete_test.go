@@ -20,6 +20,11 @@ func TestMain(m *testing.M) {
 		return nil, errors.New("no controlling terminal")
 	}
 	passphrase.SetMacDialogForTest(true)
+	// The developer may be inside Herdr. Tests that want that prompt set it
+	// themselves. Leaving it set would open a real pane.
+	os.Unsetenv("HERDR_ENV")
+	os.Unsetenv("HERDR_PANE_ID")
+	os.Unsetenv("HERDR_SOCKET_PATH")
 	os.Exit(m.Run())
 }
 

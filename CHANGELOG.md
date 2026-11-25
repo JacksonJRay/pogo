@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-25 — 1.0.9
+
+- Inside Herdr, when stdin is not a terminal, Pogo opens a temporary pane and asks there. Ovis shows its masked Password or PIN field. The answer comes back on a private socket and is not typed into the agent's pane. The pane is closed afterward. `POGO_ASKPASS` and the editor prompt still win when they are set. `pogo doctor` reports `Herdr`.
+- A terminal prompt's last line is one Ovis already recognizes: `Enter passphrase for key '.env.enc':`, `Enter old passphrase:`, `Enter new passphrase:`, or `Enter same passphrase again:`. The file name and the 15-character minimum stay on the line above.
+
 ## 2026-11-25 — 1.0.8
 
 - `pogo convert` and `pogo encrypt` accept `-o` / `--output` as the encrypted file to write. `pogo convert .env -o .env.enc` writes `.env.enc`. `pogo convert -f .env -o .env.enc` reads `.env` and writes `.env.enc`. `-f` without `-o` is still the encrypted output.

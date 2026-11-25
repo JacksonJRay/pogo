@@ -80,6 +80,18 @@ func Diagnose() Diagnosis {
 		}
 	}
 
+	if ok, skip := herdrAvailable(); ok {
+		debug("Herdr pane prompt is available")
+		return Diagnosis{
+			Available: true,
+			Backend:   HerdrLabel,
+			Detail:    "Pogo will open a Herdr pane and ask there. Ovis shows a masked Password or PIN field for that pane. An agent runs `pogo run -- <command>` with no key flags and tells the person to answer that field. Do not collect the passphrase." + promptCoverage,
+			Checks:    checks,
+		}
+	} else if skip != "" {
+		note(skip)
+	}
+
 	if ok, skip := macDialogAvailable(); ok {
 		debug("macOS dialog is available")
 		return Diagnosis{

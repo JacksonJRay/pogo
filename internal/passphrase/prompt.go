@@ -243,6 +243,17 @@ func promptOutOfBand(prompt, file string, kind PromptKind) ([]byte, error) {
 		}
 	}
 
+	if ok, skip := herdrAvailable(); ok {
+		hint, line := ovisLines(prompt, file, kind)
+		pass, err := askHerdr(hint, line)
+		if finishedPrompt(err) {
+			return pass, err
+		}
+		note("Herdr pane could not be opened")
+	} else if skip != "" {
+		note(skip)
+	}
+
 	if ok, skip := macDialogAvailable(); ok {
 		pass, err := askMacDialog(text)
 		if finishedPrompt(err) {

@@ -131,7 +131,7 @@ func TestHelpFormsMatch(t *testing.T) {
 			}
 		}
 		if cmd == "docker" {
-			for _, phrase := range []string{"Enter passphrase: ", "docker inspect", "--key-stdin", "PID 1", "read -rs", "op read", "docker compose run -T", "-it", "Which method should I pick?"} {
+			for _, phrase := range []string{"Enter passphrase for key '.env.enc':", "docker inspect", "--key-stdin", "PID 1", "read -rs", "op read", "docker compose run -T", "-it", "Which method should I pick?"} {
 				if !strings.Contains(longOut, phrase) {
 					t.Errorf("%s help missing %q", cmd, phrase)
 				}
@@ -315,7 +315,7 @@ func TestSkillAndVersion(t *testing.T) {
 		t.Fatalf("--version %d %q", code, stdout)
 	}
 	code, stdout, _ = runCLI(t, "version", "--help")
-	if code != 0 || !strings.Contains(stdout, "pogo 1.0.8") {
+	if code != 0 || !strings.Contains(stdout, "pogo 1.0.9") {
 		t.Fatalf("version help %d %q", code, stdout)
 	}
 	code, stdout, stderr = runCLI(t, "skill", "--list")

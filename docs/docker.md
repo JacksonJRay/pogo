@@ -35,7 +35,7 @@ docker run -it --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE
 You will see this prompt. Nothing is echoed as you type:
 
 ```text
-Enter passphrase:
+Enter passphrase for key '.env.enc':
 ```
 
 Compose, attached terminal (same entrypoint, same prompt):
@@ -68,7 +68,7 @@ CMD ["node","server.js"]
 read -rs POGO_PASS && printf '%s' "$POGO_PASS" | docker run -i --rm -v "$PWD/.env.enc:/app/.env.enc:ro" IMAGE ; unset POGO_PASS
 ```
 
-If that entrypoint is started with a terminal (`docker run -it`), Pogo prints `Enter passphrase: ` to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. That is the same as the interactive prompt. The program keeps the terminal. A pipe (`docker run -i`, or `docker compose run -T`) still reads all of stdin, trims the ends, and the program then sees end-of-file.
+If that entrypoint is started with a terminal (`docker run -it`), Pogo prints `Enter passphrase for key '.env.enc': ` to stderr, turns echo off, and reads one line. You do not press Ctrl-D, and the passphrase is not echoed. That is the same as the interactive prompt. The program keeps the terminal. A pipe (`docker run -i`, or `docker compose run -T`) still reads all of stdin, trims the ends, and the program then sees end-of-file.
 
 ## 3. `--key-stdin` from a password manager
 

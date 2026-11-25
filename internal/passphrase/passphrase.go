@@ -209,8 +209,9 @@ func readStdinPipe() ([]byte, error) {
 // when stdin is not a terminal.
 func readFromUser(prompt, file string, kind PromptKind) ([]byte, error) {
 	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+	shown := ovisTerminalPrompt(prompt, file, kind)
 	if interactive && !useMacDialogInsteadOfTerminal() {
-		return readInteractive(prompt)
+		return readInteractive(shown)
 	}
 	pass, err := promptOutOfBand(prompt, file, kind)
 	if !interactive {
@@ -218,7 +219,7 @@ func readFromUser(prompt, file string, kind PromptKind) ([]byte, error) {
 	}
 	var np *NoPromptError
 	if errors.As(err, &np) {
-		return readInteractive(prompt)
+		return readInteractive(shown)
 	}
 	return pass, err
 }

@@ -1,6 +1,6 @@
 # Commands
 
-One section per command in Pogo 1.0.8. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
+One section per command in Pogo 1.0.9. Prompts and agents: [agents.md](agents.md). Exit codes, editors, environment variables, and examples: [reference.md](reference.md). Containers: [docker.md](docker.md). Threat model: [security.md](security.md).
 
 `pogo` with no command prints the quick start and exits 1. `pogo help` prints the same page and exits 0.
 
@@ -188,7 +188,7 @@ pogo help docker
 
 `pogo version`
 
-Print `pogo` and the running version (this tree: `pogo 1.0.8`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
+Print `pogo` and the running version (this tree: `pogo 1.0.9`). Same as `pogo -V` and `pogo --version` with no command. Extra words are ignored.
 
 ```bash
 pogo version
